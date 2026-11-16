@@ -480,6 +480,8 @@ class Settings : public QObject
 
 		QString GetPsnAccountId() const;
 		void SetPsnAccountId(QString account_id);
+		QString GetPsnOnlineId() const;
+		void SetPsnOnlineId(QString online_id);
 
 		QString GetTimeFormat() const     { return time_format; }
 		void ClearKeyMapping();

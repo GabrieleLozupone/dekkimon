@@ -11,6 +11,8 @@ Item {
     property alias buttonEnabled: okButton.enabled
     property alias buttonVisible: okButton.visible
     property Item restoreFocusItem
+    // false: the page draws its own Portal-style header (PortalSettings), so hide the toolbar.
+    property bool chrome: true
     default property Item mainItem: null
 
     signal accepted()
@@ -23,7 +25,7 @@ Item {
     Keys.onEscapePressed: close()
 
     Keys.onMenuPressed: {
-        if (okButton.enabled)
+        if (okButton.visible && okButton.enabled)
             okButton.clicked()
     }
 
@@ -49,83 +51,97 @@ Item {
         }
     }
 
-    ToolBar {
+    Rectangle {
+        anchors.fill: parent
+        color: "#101116"
+        z: -1
+    }
+
+    Item {
         id: toolBar
-        anchors {
-            top: parent.top
-            left: parent.left
-            right: parent.right
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        visible: dialog.chrome
+        height: !dialog.chrome ? 0 : headerLabel.text ? 112 : 88
+
+        RoundButton {
+            id: backButton
+            anchors.left: parent.left
+            anchors.leftMargin: dialog.width < 800 ? 20 : 36
+            anchors.top: parent.top
+            anchors.topMargin: 20
+            width: 48
+            height: 48
+            focusPolicy: Qt.NoFocus
+            icon.source: "qrc:/icons/portal/back.svg"
+            icon.width: 22; icon.height: 22; icon.color: "#ffffff"
+            background: Rectangle { radius: 24; color: backButton.hovered ? "#2d3544" : "#232a36" }
+            onClicked: { dialog.rejected(); dialog.close(); }
+            Accessible.name: qsTr("Back")
         }
-        height: 80
-
-        RowLayout {
-            anchors {
-                fill: parent
-                leftMargin: 10
-                rightMargin: 10
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
-                flat: true
-                text: "❮"
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                onClicked: {
-                    dialog.rejected();
-                    dialog.close();
-                }
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Button {
-                id: okButton
-                Layout.fillHeight: true
-                flat: true
-                padding: 30
-                font.pixelSize: 25
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                onClicked: dialog.accepted()
-                icon.source: "qrc:/icons/options.svg";
-                icon.width: 50
-                icon.height: 50
-            }
-        }
-
         Label {
             id: titleLabel
-            anchors.centerIn: parent
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
-            font.bold: true
-            font.pixelSize: 26
+            anchors.left: backButton.right
+            anchors.leftMargin: 16
+            anchors.right: okButton.visible ? okButton.left : parent.right
+            anchors.rightMargin: 24
+            anchors.verticalCenter: backButton.verticalCenter
+            font.pixelSize: dialog.width < 800 ? 24 : 28
+            elide: Text.ElideRight
+            color: "#ffffff"
         }
-
+        Button {
+            id: okButton
+            anchors.right: parent.right
+            anchors.rightMargin: dialog.width < 800 ? 20 : 36
+            anchors.verticalCenter: backButton.verticalCenter
+            width: Math.max(140, implicitContentWidth + 48)
+            height: 52
+            focusPolicy: Qt.NoFocus
+            background: Rectangle {
+                radius: 26
+                color: okButton.enabled ? "#ffffff" : "#292b35"
+            }
+            // The Options / Menu button triggers this action (Keys.onMenuPressed above).
+            contentItem: Row {
+                spacing: 10
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 24; height: 24; sourceSize: Qt.size(48, 48)
+                    source: "qrc:/icons/portal/options-badge-dark.svg"
+                    opacity: okButton.enabled ? 1 : 0.4
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: okButton.text
+                    font.pixelSize: 17
+                    color: okButton.enabled ? "#101116" : "#777b88"
+                }
+            }
+            onClicked: dialog.accepted()
+        }
         Label {
             id: headerLabel
-            anchors {
-                top: parent.top
-                left: titleLabel.right
-                right: parent.right
-                verticalCenter: parent.verticalCenter
-            }
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
-            font.bold: true
-            font.pixelSize: 14
+            anchors.left: backButton.left
+            anchors.right: parent.right
+            anchors.rightMargin: 36
+            anchors.top: backButton.bottom
+            anchors.topMargin: 12
+            color: "#a9a5ba"
+            font.pixelSize: 15
+            elide: Text.ElideRight
         }
     }
 
     Item {
         id: contentItem
-        anchors {
-            top: toolBar.bottom
-            left: parent.left
-            right: parent.right
-            bottom: parent.bottom
-        }
+        anchors.top: toolBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: !dialog.chrome ? 0 : dialog.width < 800 ? 20 : 36
+        anchors.rightMargin: !dialog.chrome ? 0 : dialog.width < 800 ? 20 : 36
+        anchors.bottomMargin: !dialog.chrome ? 0 : 24
     }
 }

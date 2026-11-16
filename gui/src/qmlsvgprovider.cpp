@@ -21,6 +21,8 @@ QImage QmlSvgProvider::requestImage(const QString &id, QSize *size, const QSize 
         return drawConsoleImage(":/icons/console-ps4.svg", element_variant, size, requested_size);
     else if (element_name == "console-ps5")
         return drawConsoleImage(":/icons/console-ps5.svg", element_variant, size, requested_size);
+    else if (element_name == "console-ps5v")
+        return drawConsoleImage(":/icons/console-ps5v.svg", element_variant, size, requested_size);
     else if (element_name == "button-ps")
         return drawButtonImage(":/icons/buttons-ps.svg", element_variant, size, requested_size);
     else if (element_name == "button-deck")
@@ -69,6 +71,9 @@ QImage QmlSvgProvider::drawConsoleImage(const QString &file_name, const QString 
     };
     render_element(painter, state);
     render_element(painter, "console");
+    // White side covers (PS5 art): drawn over the black body, the light shows in the gaps.
+    if (renderer.elementExists(QStringLiteral("covers")))
+        render_element(painter, QStringLiteral("covers"));
     painter.end();
 
     if (size)

@@ -5,6 +5,8 @@
 #include "qmlmainwindow.h"
 #include "qmlcontroller.h"
 #include "qmlsettings.h"
+#include "psnphonelogin.h"
+#include "wifimonitor.h"
 
 #include <QObject>
 #include <QMutex>
@@ -80,6 +82,7 @@ class QmlBackend : public QObject
     Q_OBJECT
     Q_PROPERTY(QmlMainWindow* window READ qmlWindow CONSTANT)
     Q_PROPERTY(QmlSettings* settings READ qmlSettings CONSTANT)
+    Q_PROPERTY(WifiMonitor* wifi READ wifi CONSTANT)
     Q_PROPERTY(StreamSession* session READ qmlSession NOTIFY sessionChanged)
     Q_PROPERTY(QList<QmlController*> controllers READ qmlControllers NOTIFY controllersChanged)
     Q_PROPERTY(bool discoveryEnabled READ discoveryEnabled WRITE setDiscoveryEnabled NOTIFY discoveryEnabledChanged)
@@ -116,6 +119,7 @@ public:
 
     QmlMainWindow *qmlWindow() const;
     QmlSettings *qmlSettings() const;
+    WifiMonitor *wifi() const { return wifi_monitor; }
     StreamSession *qmlSession() const;
     QList<QmlController*> qmlControllers() const;
 
@@ -197,10 +201,16 @@ public:
     Q_INVOKABLE void stopAutoConnect();
     Q_INVOKABLE void setConsolePin(int index, QString console_pin);
     Q_INVOKABLE QString openPsnLink();
+    // Sign in with a phone: serves a one-time page on the LAN (see psnphonelogin.h).
+    Q_INVOKABLE QString startPsnPhoneLogin();
+    Q_INVOKABLE void stopPsnPhoneLogin();
+    Q_INVOKABLE QString psnPhoneLoginError() const;
     Q_INVOKABLE QString openPlaceboOptionsLink();
     Q_INVOKABLE void initPsnAuth(const QUrl &url, const QJSValue &callback);
     Q_INVOKABLE void psnCancel(bool stop_thread);
     Q_INVOKABLE void refreshPsnToken();
+    // Fills Chiaki.settings.psnOnlineId for an existing sign-in that predates it.
+    Q_INVOKABLE void fetchPsnOnlineId();
     Q_INVOKABLE void beginControllerMapping(bool reset_mapping);
     Q_INVOKABLE void creatingControllerMapping(bool creating_controller_mapping);
     Q_INVOKABLE void updateButton(int chiaki_button, QString physical_button, int new_index);
@@ -237,6 +247,9 @@ signals:
     void hiddenHostsChanged();
     void psnTokenChanged();
     void psnCredsExpired();
+    void psnPhoneLoginConnected(const QString &peer);
+    void psnPhoneLoginRedirect(const QString &url, const QString &peer);
+    void psnPhoneLoginExpired();
     void autoConnectChanged();
     void wakeupStartInitiated();
     void wakeupStartFailed();
@@ -285,6 +298,9 @@ private:
 
     Settings *settings = {};
     QmlSettings *settings_qml = {};
+    WifiMonitor *wifi_monitor = {};
+    PsnPhoneLogin *psn_phone_login = {};
+    QString psn_online_id_token; // token the online ID was last requested for (one request per token)
     QmlMainWindow *window = {};
     StreamSession *session = {};
     QThread *frame_thread = {};

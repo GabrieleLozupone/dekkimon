@@ -16,7 +16,8 @@ Item {
     property bool sessionLoading: true
     property list<Item> restoreFocusItems
     readonly property bool useSeparateMenuWindow: Chiaki.window.runtimeRendererBackend === 1
-    readonly property int streamMenuHeight: 200
+    readonly property int streamMenuHeight: Math.round(view.height)
+    readonly property int streamMenuWidth: Math.min(430, Math.round(view.width))
     readonly property bool streamStatsVisible: Chiaki.settings.showStreamStats && Chiaki.session && !(menuController.open || menuController.closing) && !sessionLoading && !sessionError && !(Chiaki.settings.audioVideoDisabled & 0x02)
     property int separateMenuX: 0
     property int separateMenuY: 0
@@ -49,9 +50,9 @@ Item {
             return;
         const topLeft = view.mapToGlobal(0, 0);
         if (useSeparateMenuWindow) {
-            separateMenuX = Math.round(topLeft.x);
+            separateMenuX = Math.round(topLeft.x + view.width - streamMenuWidth);
             separateMenuY = Math.round(topLeft.y + view.height - streamMenuHeight);
-            separateMenuWidth = Math.round(view.width);
+            separateMenuWidth = streamMenuWidth;
             separateStatsX = Math.round(topLeft.x);
             separateStatsY = Math.round(topLeft.y);
             separateStatsWidth = Math.round(view.width);
@@ -141,14 +142,37 @@ Item {
         }
     }
 
-    Rectangle {
+    // Connection screen. Stays up after the first frame until the reveal (a hole opening
+    // from the globe centre) has uncovered the stream, then hides.
+    property bool revealDone: false
+    readonly property bool avDisabled: (Chiaki.settings.audioVideoDisabled & 0x02) !== 0
+    onSessionLoadingChanged: if (sessionLoading) revealDone = false
+    Timer {
+        // Watchdog: never leave the overlay over a running stream.
+        interval: 2500
+        running: !view.sessionLoading && !view.sessionError && !view.revealDone
+        onTriggered: view.revealDone = true
+    }
+    Item {
         id: loadingView
         anchors.fill: parent
-        color: "black"
-        opacity: sessionError || sessionLoading || (Chiaki.settings.audioVideoDisabled & 0x02) ? 1.0 : 0.0
+        opacity: sessionError || sessionLoading || view.avDisabled || !view.revealDone ? 1.0 : 0.0
         visible: opacity
 
-        Behavior on opacity { NumberAnimation { duration: 250 } }
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Rectangle {
+            anchors.fill: parent
+            color: "#080812"
+            visible: view.sessionError || view.avDisabled
+        }
+        PortalConnectOverlay {
+            anchors.fill: parent
+            consoleName: typeof root !== "undefined" && root.portalConsoleName ? root.portalConsoleName : ""
+            streamReady: !view.sessionLoading && !view.sessionError
+            running: loadingView.visible
+            visible: !view.sessionError && !view.avDisabled
+            onRevealFinished: view.revealDone = true
+        }
 
         Item {
             anchors {
@@ -163,16 +187,19 @@ Item {
                 anchors.centerIn: parent
                 width: 70
                 height: width
-                visible: sessionLoading
-                running: sessionLoading
+                visible: false
+                running: false
             }
 
             Label {
                 anchors {
-                    top: spinner.bottom
-                    horizontalCenter: spinner.horizontalCenter
-                    topMargin: 30
+                    left: parent.left
+                    bottom: parent.bottom
+                    leftMargin: view.width < 800 ? 32 : 64
+                    bottomMargin: 36
                 }
+                font.pixelSize: 15
+                color: "#a9a5ba"
                 text: {
                     if(Chiaki.settings.dpadTouchEnabled)
                     {
@@ -216,29 +243,71 @@ Item {
                 visible: !sessionLoading && !sessionError && (Chiaki.settings.audioVideoDisabled & 0x02)
             }
 
-            Label {
-                id: errorTitleLabel
-                anchors {
-                    bottom: spinner.top
-                    horizontalCenter: spinner.horizontalCenter
+        }
+        // Session error: centred card with the action spelled out (✕ / ○ both go home).
+        Rectangle {
+            id: errorCard
+            visible: errorTitleLabel.text !== ""
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 80, 640)
+            height: errorColumn.implicitHeight + 64
+            radius: 26
+            color: "#161a22"
+            border.width: 1
+            border.color: "#2b3140"
+            ColumnLayout {
+                id: errorColumn
+                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
+                anchors.leftMargin: 32; anchors.rightMargin: 32
+                spacing: 14
+                Label {
+                    id: errorTitleLabel
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 26
+                    color: "#ffffff"
+                    visible: text
+                    onVisibleChanged: if (visible) view.grabInput(errorTitleLabel)
+                    Keys.onReturnPressed: root.showMainView()
+                    Keys.onEscapePressed: root.showMainView()
                 }
-                font.pixelSize: 24
-                visible: text
-                onVisibleChanged: if (visible) view.grabInput(errorTitleLabel)
-                Keys.onReturnPressed: root.showMainView()
-                Keys.onEscapePressed: root.showMainView()
-            }
-
-            Label {
-                id: errorTextLabel
-                anchors {
-                    top: errorTitleLabel.bottom
-                    horizontalCenter: errorTitleLabel.horizontalCenter
-                    topMargin: 10
+                Label {
+                    id: errorTextLabel
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 17
+                    color: "#c9c5d8"
+                    visible: text
                 }
-                horizontalAlignment: Text.AlignHCenter
-                font.pixelSize: 20
-                visible: text
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.topMargin: 12
+                    implicitWidth: homeRow.implicitWidth + 48
+                    implicitHeight: 56
+                    radius: 28
+                    color: "#ffffff"
+                    border.width: 3
+                    border.color: "#8fb8ff"
+                    Row {
+                        id: homeRow
+                        anchors.centerIn: parent
+                        spacing: 10
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 28; height: 28; radius: 14
+                            color: "#101116"
+                            Image {
+                                anchors.centerIn: parent
+                                width: 22; height: 22; sourceSize: Qt.size(52, 52)
+                                source: typeof root !== "undefined" && root.controllerButton ? root.controllerButton("cross") : ""
+                            }
+                        }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Back to home"); font.pixelSize: 17; color: "#101116" }
+                    }
+                    MouseArea { anchors.fill: parent; onClicked: root.showMainView() }
+                }
             }
         }
     }
@@ -451,409 +520,21 @@ Item {
 
     Component {
         id: menuContentComponent
-
-        Item {
-            property Item initialFocusItem: closeButton
-            anchors.fill: parent
-
-            Canvas {
-                anchors.fill: parent
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-                onPaint: {
-                    let ctx = getContext("2d");
-                    let gradient = ctx.createLinearGradient(0, 0, 0, height);
-                    gradient.addColorStop(0.0, Qt.rgba(0.0, 0.0, 0.0, 0.0));
-                    gradient.addColorStop(0.7, Qt.rgba(0.5, 0.5, 0.5, 0.7));
-                    gradient.addColorStop(1.0, Qt.rgba(0.5, 0.5, 0.5, 0.9));
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(0, 0, width, height);
-                }
-            }
-
-            RowLayout {
-                anchors {
-                    left: parent.left
-                    bottom: parent.bottom
-                    leftMargin: 30
-                    bottomMargin: 40
-                }
-                spacing: 0
-
-                ToolButton {
-                    id: closeButton
-                    Layout.rightMargin: 20
-                    text: "×"
-                    padding: 10
-                    font.pixelSize: 50
-                    down: activeFocus
-                    onClicked: {
-                        if (Chiaki.session)
-                            Chiaki.window.close();
-                        else
-                            root.showMainView();
-                    }
-                    KeyNavigation.right: volumeSlider
-                    Keys.onReturnPressed: clicked()
-                    Keys.onEscapePressed: menuController.close()
-                }
-
-            ToolSeparator {
-                Layout.leftMargin: -10
-                Layout.rightMargin: 10
-            }
-
-            Slider {
-                id: volumeSlider
-                Layout.rightMargin: 20
-                orientation: Qt.Vertical
-                from: 0
-                to: 128
-                Layout.preferredHeight: 100
-                padding: 10
-                stepSize: 1
-                value: Chiaki.settings.audioVolume
-                onMoved: Chiaki.settings.audioVolume = value
-                KeyNavigation.left: closeButton
-                KeyNavigation.right: muteButton
-                Keys.onEscapePressed: menuController.close()
-                Label {
-                    anchors {
-                        top: parent.bottom
-                        horizontalCenter: parent.horizontalCenter
-                        leftMargin: 10
-                    }
-                    text: {
-                        ((parent.value / 128.0) * 100).toFixed(0) + qsTr("% Volume")
-                    }
-                }
-            }
-
-            ToolSeparator {
-                Layout.leftMargin: -10
-                Layout.rightMargin: -10
-            }
-
-            ToolButton {
-                id: muteButton
-                Layout.rightMargin: 20
-                text: qsTr("Mic")
-                padding: 10
-                checkable: true
-                enabled: Chiaki.session && Chiaki.session.connected
-                checked: Chiaki.session && !Chiaki.session.muted
-                onToggled: Chiaki.session.muted = !Chiaki.session.muted
-                KeyNavigation.left: volumeSlider
-                KeyNavigation.right: zoomButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: zoomButton
-                text: qsTr("Zoom")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
-                onToggled: Chiaki.window.videoMode = Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom ? ChiakiWindow.VideoMode.Normal : ChiakiWindow.VideoMode.Zoom
-                KeyNavigation.left: muteButton
-                KeyNavigation.right: {
-                    if(Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom)
-                        zoomFactor
-                    else
-                        stretchButton
-                }
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            Slider {
-                id: zoomFactor
-                orientation: Qt.Vertical
-                from: -1
-                to: 4
-                Layout.preferredHeight: 100
-                stepSize: 0.01
-                visible: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom
-                value: Chiaki.window.ZoomFactor
-                onMoved: {
-                    Chiaki.window.ZoomFactor = value
-                    Chiaki.settings.sZoomFactor = value
-                }
-                Label {
-                    anchors {
-                        top: parent.bottom
-                        horizontalCenter: parent.horizontalCenter
-                        leftMargin: 10
-                    }
-                    text: {
-                        if(parent.value === -1)
-                            qsTr("No Black Bars")
-                        else if(parent.value >= 0)
-                            qsTr((parent.value + 1).toFixed(2)) + qsTr(" x")
-                        else
-                            qsTr(parent.value.toFixed(2)) + qsTr(" x")
-                    }
-
-                }
-            }
-
-            ToolSeparator {
-                Layout.leftMargin: -10
-                Layout.rightMargin: -10
-            }
-
-            ToolButton {
-                id: stretchButton
-                Layout.rightMargin: 50
-                text: qsTr("Stretch")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch
-                onToggled: Chiaki.window.videoMode = Chiaki.window.videoMode == ChiakiWindow.VideoMode.Stretch ? ChiakiWindow.VideoMode.Normal : ChiakiWindow.VideoMode.Stretch
-                KeyNavigation.left: {
-                    if(Chiaki.window.videoMode == ChiakiWindow.VideoMode.Zoom)
-                        zoomFactor
-                    else
-                        zoomButton
-                }
-                KeyNavigation.right: defaultButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: defaultButton
-                text: qsTr("Default")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Default
-                onToggled: {
-                    Chiaki.window.videoPreset = ChiakiWindow.VideoPreset.Default
-                    Chiaki.settings.videoPreset = ChiakiWindow.VideoPreset.Default
-                }
-                KeyNavigation.left: stretchButton
-                KeyNavigation.right: highQualityButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolSeparator {
-                Layout.leftMargin: -10
-                Layout.rightMargin: -10
-            }
-
-            ToolButton {
-                id: highQualityButton
-                text: qsTr("High Quality")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.HighQuality
-                onToggled: {
-                    Chiaki.window.videoPreset = ChiakiWindow.VideoPreset.HighQuality
-                    Chiaki.settings.videoPreset = ChiakiWindow.VideoPreset.HighQuality
-                }
-                KeyNavigation.left: defaultButton
-                KeyNavigation.right: highQualitySpatialButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: highQualitySpatialButton
-                text: qsTr("HQ + Spatial")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.HighQualitySpatial
-                onToggled: {
-                    Chiaki.window.videoPreset = ChiakiWindow.VideoPreset.HighQualitySpatial
-                    Chiaki.settings.videoPreset = ChiakiWindow.VideoPreset.HighQualitySpatial
-                }
-                KeyNavigation.left: highQualityButton
-                KeyNavigation.right: highQualityAdvancedSpatialButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: highQualityAdvancedSpatialButton
-                text: qsTr("HQ + Adv Spatial")
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial
-                onToggled: {
-                    Chiaki.window.videoPreset = ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial
-                    Chiaki.settings.videoPreset = ChiakiWindow.VideoPreset.HighQualityAdvancedSpatial
-                }
-                KeyNavigation.left: highQualitySpatialButton
-                KeyNavigation.right: customButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolSeparator {
-                Layout.leftMargin: -10
-                Layout.rightMargin: -10
-            }
-
-            ToolButton {
-                id: customButton
-                text: qsTr("Custom")
-                Layout.rightMargin: 40
-                padding: 10
-                checkable: true
-                checked: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Custom
-                onToggled: {
-                    Chiaki.window.videoPreset = ChiakiWindow.VideoPreset.Custom
-                    Chiaki.settings.videoPreset = ChiakiWindow.VideoPreset.Custom
-                }
-                KeyNavigation.left: highQualityAdvancedSpatialButton
-                KeyNavigation.right: displaySettingsButton
-                Keys.onReturnPressed: toggled()
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: displaySettingsButton
-                text: qsTr("Display")
-                padding: 10
-                checkable: false
-                icon.source: "qrc:/icons/settings-20px.svg";
-                onClicked: root.openDisplaySettings()
-                KeyNavigation.left: customButton
-                KeyNavigation.right: {
-                    if(Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Custom)
-                        placeboSettingsButton;
-                    else
-                        displaySettingsButton;
-                }
-                Keys.onReturnPressed: {
-                    menuController.close();
-                    clicked();
-                }
-                Keys.onEscapePressed: menuController.close()
-            }
-
-            ToolButton {
-                id: placeboSettingsButton
-                text: qsTr("Placebo")
-                icon.source: "qrc:/icons/settings-20px.svg";
-                padding: 10
-                checkable: false
-                onClicked: root.openPlaceboSettings()
-                KeyNavigation.left: displaySettingsButton
-                visible: Chiaki.window.videoPreset == ChiakiWindow.VideoPreset.Custom
-                Keys.onReturnPressed: {
-                    menuController.close();
-                    clicked();
-                }
-                Keys.onEscapePressed: menuController.close()
-            }
-            }
-
-            Label {
-                anchors {
-                    right: consoleNameLabel.right
-                    bottom: consoleNameLabel.top
-                    bottomMargin: 5
-
-                }
-                text: "Mbps"
-                font.pixelSize: 18
-                visible: Chiaki.session
-
-                Label {
-                    anchors {
-                        right: parent.left
-                        baseline: parent.baseline
-                        rightMargin: 5
-                    }
-                        text: visible && Chiaki.session ? Chiaki.session.measuredBitrate.toFixed(1) : ""
-                    color: Material.accent
-                    font.bold: true
-                    font.pixelSize: 28
-                }
-            }
-
-            Label {
-                id: consoleNameLabel
-                anchors {
-                    right: parent.right
-                    verticalCenter: parent.verticalCenter
-                    rightMargin: 30
-                }
-                text: {
-                    if (!Chiaki.session)
-                        return "";
-                    if (Chiaki.session.connected)
-                        return qsTr("Connected to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
-                    return qsTr("Connecting to <b>%1</b>").arg(Chiaki.settings.streamerMode ? "hidden" : Chiaki.session.host);
-                }
-
-                RowLayout {
-                    anchors {
-                        right: parent.right
-                        top: parent.bottom
-                        topMargin: 12
-                    }
-
-                    Label {
-                        text: qsTr("packet loss")
-                        font.pixelSize: 15
-                        opacity: parent.visible && Chiaki.session ? 1.0 : 0.0
-                        visible: opacity
-
-                        Behavior on opacity { NumberAnimation { duration: 250 } }
-
-                        Label {
-                            anchors {
-                                right: parent.left
-                                baseline: parent.baseline
-                                rightMargin: 5
-                            }
-                            text: visible ? "%1<font size=\"1\">%</font>".arg((((Chiaki.session && isFinite(Chiaki.session.averagePacketLoss)) ? Chiaki.session.averagePacketLoss : 0) * 100).toFixed(1)) : ""
-                            color: "#ef9a9a" // Material.Red
-                            font.bold: true
-                            font.pixelSize: 18
-                        }
-                    }
-
-                    Label {
-                        Layout.leftMargin: droppedFramesLabel.width + 6
-                        text: qsTr("dropped frames")
-                        font.pixelSize: 15
-                        opacity: parent.visible && Chiaki.window.droppedFrames ? 1.0 : 0.0
-                        visible: opacity
-
-                        Behavior on opacity { NumberAnimation { duration: 250 } }
-
-                        Label {
-                            id: droppedFramesLabel
-                            anchors {
-                                right: parent.left
-                                baseline: parent.baseline
-                                rightMargin: 5
-                            }
-                            text: visible ? Chiaki.window.droppedFrames : ""
-                            color: "#ef9a9a" // Material.Red
-                            font.bold: true
-                            font.pixelSize: 18
-                        }
-                    }
-                }
-            }
+        PortalQuickMenu {
+            streaming: true
+            onCloseRequested: menuController.close()
+            onDisconnectRequested: { if (Chiaki.session) Chiaki.window.close(); else root.showMainView(); }
+            onStopRequested: sleep => { menuController.close(); Chiaki.stopSession(sleep); }
+            onDisplaySettingsRequested: { menuController.close(); root.openDisplaySettings(); }
+            onPlaceboSettingsRequested: { menuController.close(); root.openPlaceboSettings(); }
         }
     }
-
     Item {
         id: menuView
-        anchors {
-            left: parent.left
-            right: parent.right
-            bottom: parent.bottom
-        }
+        anchors.top: parent.top
+        width: streamMenuWidth
         height: streamMenuHeight
-        y: menuController.open ? parent.height - height : parent.height
+        x: menuController.open ? parent.width - width : parent.width
         visible: !useSeparateMenuWindow && (menuController.open || menuController.closing)
         enabled: !useSeparateMenuWindow && menuController.open
         onVisibleChanged: {
@@ -861,7 +542,7 @@ Item {
                 view.grabInput(inlineMenuContent.item ? inlineMenuContent.item.initialFocusItem : null);
         }
 
-        Behavior on y {
+        Behavior on x {
             NumberAnimation {
                 id: inlineMenuAnimation
                 duration: 250
@@ -882,12 +563,18 @@ Item {
         }
     }
 
+    Binding {
+        target: Chiaki.wifi ? Chiaki.wifi : null; property: "active"
+        value: menuController.open; when: view.visible && !!Chiaki.wifi
+        restoreMode: Binding.RestoreNone
+    }
+
     StreamMenuWindow {
         id: separateMenuWindow
         transientParent: view.hostWindow
-        x: separateMenuX
-        y: menuController.open ? separateMenuY : separateMenuY + streamMenuHeight
-        width: separateMenuWidth > 0 ? separateMenuWidth : view.width
+        x: menuController.open ? separateMenuX : separateMenuX + streamMenuWidth
+        y: separateMenuY
+        width: separateMenuWidth > 0 ? separateMenuWidth : streamMenuWidth
         height: streamMenuHeight
         open: useSeparateMenuWindow && menuController.open
         closing: useSeparateMenuWindow && menuController.closing
@@ -1101,6 +788,7 @@ Item {
             standardButton(Dialog.Ok).enabled = Qt.binding(function() {
                 return pinField.acceptableInput;
             });
+            pinField.text = "";
             view.grabInput(pinField);
             sessionPinDialogActive = true;
             view.updateOverlayInteractionActive();
@@ -1114,22 +802,18 @@ Item {
         onRejected: Chiaki.stopSession(false)
         Material.roundedScale: Material.MediumScale
 
-        TextField {
+        PortalPinPad {
             id: pinField
-            echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-            implicitWidth: 200
-            validator: RegularExpressionValidator { regularExpression: /[0-9]{4}/ }
-            Keys.onReturnPressed: {
-                if(sessionPinDialog.standardButton(Dialog.Ok).enabled)
-                    sessionPinDialog.standardButton(Dialog.Ok).clicked()
-            }
+            implicitWidth: Math.min(view.width - 80, 460)
+            implicitHeight: Math.min(view.height - 180, 360)
+            onAccepted: sessionPinDialog.accept()
+            onCancelled: sessionPinDialog.reject()
         }
     }
-
     Window {
         id: separateSessionPinWindow
-        readonly property int dialogWidth: 360
-        readonly property int dialogHeight: 220
+        readonly property int dialogWidth: Math.min(560, view.width - 40)
+        readonly property int dialogHeight: Math.min(600, view.height - 40)
         visible: false
         flags: Qt.Dialog | Qt.FramelessWindowHint
         color: "transparent"
@@ -1173,16 +857,14 @@ Item {
                 font.pixelSize: 24
             }
 
-            TextField {
+            PortalPinPad {
                 id: separatePinField
-                Layout.topMargin: 20
+                Layout.topMargin: 16
                 Layout.fillWidth: true
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                validator: RegularExpressionValidator { regularExpression: /[0-9]{4}/ }
-                Keys.onReturnPressed: if (acceptableInput) separatePinOkButton.clicked()
-                Keys.onEscapePressed: separateSessionPinWindow.visible = false
+                Layout.fillHeight: true
+                onAccepted: separatePinOkButton.clicked()
+                onCancelled: separateSessionPinWindow.visible = false
             }
-
             RowLayout {
                 Layout.topMargin: 20
                 Layout.alignment: Qt.AlignRight

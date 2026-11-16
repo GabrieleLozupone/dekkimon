@@ -42,6 +42,15 @@ typedef struct chiaki_frame_processor_t
 	size_t unit_slots_size;
 	bool flushed; // whether we have already flushed the current frame, i.e. are only interested in stats, not data.
 	ChiakiStreamStats stream_stats;
+	// Monotonic counters for diagnostics (read by the GUI benchmark; never reset).
+	// units_fec is the console's FEC share as sent, before the minimum-of-one clamp.
+	struct {
+		uint64_t frames;
+		uint64_t units_source;
+		uint64_t units_fec;
+		uint64_t fec_recovered;
+		uint64_t fec_failed;
+	} diag;
 } ChiakiFrameProcessor;
 
 typedef enum chiaki_frame_flush_result_t {

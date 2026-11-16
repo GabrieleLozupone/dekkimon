@@ -8,7 +8,8 @@ import org.streetpea.chiaking
 import "controls" as C
 
 DialogView {
-    title: qsTr("Add Manual Console")
+    title: qsTr("Add a console")
+    header: qsTr("Enter your console address and select its paired profile.")
     buttonText: qsTr("Add")
     buttonEnabled: hostField.text.trim() && (consoleCombo.model[consoleCombo.currentIndex].index != -1)
     onAccepted: {
@@ -29,24 +30,25 @@ DialogView {
 
             Label {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Host:")
+                text: qsTr("Console address")
             }
 
             C.TextField {
                 id: hostField
+                placeholderText: qsTr("IP address or hostname")
                 echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                Layout.preferredWidth: 400
+                Layout.preferredWidth: Math.min(400, root.width - 280)
                 firstInFocusChain: true
             }
 
             Label {
                 Layout.alignment: Qt.AlignRight
-                text: qsTr("Registered Consoles:")
+                text: qsTr("Paired console")
             }
 
             C.ComboBox {
                 id: consoleCombo
-                Layout.preferredWidth: 400
+                Layout.preferredWidth: Math.min(400, root.width - 280)
                 lastInFocusChain: true
                 textRole: "name"
                 model: {

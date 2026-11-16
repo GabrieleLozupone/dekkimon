@@ -78,6 +78,12 @@ typedef struct chiaki_stream_connection_t
 	char *remote_disconnect_reason;
 
 	double measured_bitrate;
+	// Last CONNECTIONQUALITY report from the console (diagnostics): its target bitrate,
+	// round-trip time and loss counter as sent, and how many reports were received.
+	uint32_t quality_target_bitrate;
+	double quality_rtt;
+	uint64_t quality_loss;
+	uint64_t quality_reports;
 } ChiakiStreamConnection;
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_stream_connection_init(ChiakiStreamConnection *stream_connection, ChiakiSession *session, double packet_loss_max);

@@ -32,12 +32,15 @@ public:
 
 
     void GetPsnAccountId(QString redirectCode);
+    // Reads the online ID (display name) for an existing access token.
+    void FetchOnlineId(const QString &accessToken);
 
 
 signals:
     void AccountIDResponse(QString accountId);
     void AccountIDError(const QString& url, const QString& error);
     void Finished();
+    void OnlineIdResponse(const QString &onlineId);
 
 private:
     QString basicAuthHeader;
@@ -70,6 +73,8 @@ private slots:
     void handleAccessTokenResponse(const QString& url, const QJsonDocument& jsonDocument);
 
     void handUserIDResponse(const QString& url, const QJsonDocument& jsonDocument);
+
+    void handleOnlineIdResponse(const QString& url, const QJsonDocument& jsonDocument);
 
     void handleErrorResponse(const QString& url, const QString& error, const QNetworkReply::NetworkError& err);
 };

@@ -102,6 +102,11 @@ class SdeckHapticsWorker;
 		RumbleHapticsIntensity rumble_haptics_intensity;
 		bool buttons_by_pos;
 		bool enable_idr_on_fec_failure;
+		// Streaming experiments (CHIAKI_EXPERIMENT_FILE, see applyStreamExperiment): reorder
+		// timeout for missing video packets (0 = library default) and a description of every
+		// override, written to the benchmark CSV at session start.
+		qint64 av_reorder_timeout_us = 0;
+		QString experiment;
 		bool start_mic_unmuted;
 		bool port_guessing_enabled;
 		int port_guess_count;
@@ -183,8 +188,21 @@ class StreamSession : public QObject
 		int32_t frames_lost = 0;
 		int32_t pending_frames_lost = 0;
 		double packet_loss_max = 0;
+		QString experiment_desc;
 		QList<double> packet_loss_history;
 		QAtomicInteger<quint64> decoder_flush_generation{0};
+		// Video watchdog: recovers a picture that froze while the session (audio, input) is
+		// still alive. Counters are written from the Takion and frame threads, read on the GUI thread.
+		QAtomicInteger<quint64> video_fed_count{0};     // packets accepted by the decoder
+		QAtomicInteger<quint64> video_decoded_count{0}; // pictures pulled out of the decoder
+		QTimer *video_watchdog_timer = nullptr;
+		quint64 wd_last_decoded = 0;
+		quint64 wd_fed_at_progress = 0;
+		qint64 wd_progress_ms = 0;
+		qint64 wd_last_action_ms = 0;
+		int wd_attempts = 0;
+		bool wd_flushed = false;
+		void VideoWatchdogTick();
 		bool cant_display = false;
 		int haptics_handheld;
 		float rumble_multiplier;
@@ -350,7 +368,24 @@ class StreamSession : public QObject
 		bool GetConnected() { return connected; }
 		double GetMeasuredBitrate()	{ return measured_bitrate; }
 		double GetAveragePacketLoss()	{ return average_packet_loss; }
+		// Monotonic stream counters for the benchmark CSV (read once per second; benign races).
+		struct StreamDiag
+		{
+			quint64 frames = 0, units_source = 0, units_fec = 0, fec_recovered = 0, fec_failed = 0;
+			quint64 video_skipped = 0, video_late = 0;
+			quint32 target_bitrate = 0;
+			double rtt = 0.0;
+			quint64 console_loss = 0, quality_reports = 0;
+			double loss_measured = 0.0; // last 200 ms congestion-control window, before the reported cap
+			double loss_reported_max = 0.0;
+		};
+		StreamDiag GetStreamDiag();
+		QString GetExperiment() const { return experiment_desc; }
+		bool GetIdrOnFecFailure() const { return session.connect_info.enable_idr_on_fec_failure; }
+		double GetPacketLossMax() const { return packet_loss_max; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
+		// Called by the frame thread for every picture pulled from the decoder (any thread).
+		void NoteDecodedFrame() { video_decoded_count.fetchAndAddRelaxed(1); }
 		int GetFramesLost()		{ return frames_lost; }
 		bool GetMuted()	{ return muted; }
 		void SetMuted(bool enable)	{ if (enable != muted) ToggleMute(); }

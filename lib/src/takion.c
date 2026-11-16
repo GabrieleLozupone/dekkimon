@@ -45,6 +45,17 @@
 #define TAKION_REORDER_QUEUE_SIZE_EXP 4 // => 16 entries
 #define TAKION_AV_VIDEO_REORDER_QUEUE_SIZE_EXP 6 // => 64 entries
 #define TAKION_AV_REORDER_TIMEOUT_US 16000 // ~1 frame at 60fps
+static volatile int64_t takion_av_reorder_timeout_us = TAKION_AV_REORDER_TIMEOUT_US;
+
+CHIAKI_EXPORT void chiaki_takion_set_av_reorder_timeout_us(int64_t timeout_us)
+{
+	takion_av_reorder_timeout_us = timeout_us > 0 ? timeout_us : TAKION_AV_REORDER_TIMEOUT_US;
+}
+
+CHIAKI_EXPORT int64_t chiaki_takion_get_av_reorder_timeout_us(void)
+{
+	return takion_av_reorder_timeout_us;
+}
 
 #define TAKION_POSTPONE_PACKETS_SIZE 32
 
@@ -189,6 +200,33 @@ static ChiakiErrorCode takion_recv_message_cookie_ack(ChiakiTakion *takion);
 static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uint8_t *buf, size_t buf_size);
 static ChiakiErrorCode takion_read_extra_sock_messages(ChiakiTakion *takion);
 
+// Kernel receive buffer for the stream socket. Wi-Fi delivers video in bursts after a short
+// stall (block-ack retries, AP queueing); with only a_rwnd (100 KiB, ~200 KiB after the
+// kernel doubles it) those bursts overflowed the socket and were dropped before Takion read
+// them. Ask for 2 MiB (Linux caps silently at net.core.rmem_max); a_rwnd, the window
+// advertised to the console, is unchanged. Falls back to the previous size if refused.
+#define TAKION_SOCKET_RCVBUF_PREFERRED (2 * 1024 * 1024)
+static int takion_set_rcvbuf(ChiakiTakion *takion)
+{
+	int rcvbuf_val = TAKION_SOCKET_RCVBUF_PREFERRED;
+	if((int)takion->a_rwnd > rcvbuf_val)
+		rcvbuf_val = takion->a_rwnd;
+	int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
+	if(r < 0)
+	{
+		rcvbuf_val = takion->a_rwnd;
+		r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
+	}
+	if(r >= 0)
+	{
+		int effective = 0;
+		socklen_t len = sizeof(effective);
+		if(getsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (CHIAKI_SOCKET_BUF_TYPE)&effective, &len) == 0)
+			CHIAKI_LOGI(takion->log, "Takion socket receive buffer %d bytes (requested %d)", effective, rcvbuf_val);
+	}
+	return r;
+}
+
 CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, ChiakiTakionConnectInfo *info, chiaki_socket_t *sock)
 {
 	ChiakiErrorCode ret = CHIAKI_ERR_SUCCESS;
@@ -261,8 +299,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			CHIAKI_LOGE(takion->log, "Takion had problem reading extra messages from socket using PSN Connection with error: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
 			goto error_sock;
 		}
-		const int rcvbuf_val = takion->a_rwnd;
-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
+		int r = takion_set_rcvbuf(takion);
 		if(r < 0)
 		{
 			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
@@ -349,8 +386,7 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, Chiaki
 			ret = CHIAKI_ERR_NETWORK;
 			goto error_pipe;
 		}
-		const int rcvbuf_val = takion->a_rwnd;
-		int r = setsockopt(takion->sock, SOL_SOCKET, SO_RCVBUF, (const CHIAKI_SOCKET_BUF_TYPE)&rcvbuf_val, sizeof(rcvbuf_val));
+		int r = takion_set_rcvbuf(takion);
 		if(r < 0)
 		{
 			CHIAKI_LOGE(takion->log, "Takion failed to setsockopt SO_RCVBUF: " CHIAKI_SOCKET_ERROR_FMT, CHIAKI_SOCKET_ERROR_VALUE);
@@ -972,7 +1008,7 @@ static void takion_av_drop(uint64_t seq_num, void *elem_user, void *cb_user)
 
 /**
  * Pull and dispatch all in-order entries from the given AV queue.
- * If the head packet is missing, wait up to TAKION_AV_REORDER_TIMEOUT_US before
+ * If the head packet is missing, wait up to takion_av_reorder_timeout_us before
  * skipping it, then retry. This handles WiFi jitter without stalling on lost packets.
  */
 static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReorderQueue *queue,
@@ -1032,7 +1068,7 @@ static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReord
 			break;
 		}
 
-		if(now - *head_wait_start_us <= TAKION_AV_REORDER_TIMEOUT_US)
+		if(now - *head_wait_start_us <= takion_av_reorder_timeout_us)
 			break;
 
 		// Timeout exceeded: skip directly to the first buffered packet so startup
@@ -1054,6 +1090,8 @@ static void takion_av_queue_flush_with_timeout(ChiakiTakion *takion, ChiakiReord
 			(unsigned long long)queue->seq_num_add(queue->begin, skipped));
 		queue->begin = queue->seq_num_add(queue->begin, skipped);
 		queue->count -= skipped;
+		if(queue == &takion->video_queue)
+			takion->video_skipped_total += skipped;
 		*head_wait_start_us = 0;
 		made_progress = true;
 	}
@@ -1082,7 +1120,7 @@ static uint64_t takion_av_queues_next_timeout_ms(ChiakiTakion *takion)
 		if(head_wait_start_us == 0)
 			continue;
 
-		int64_t remaining_us = TAKION_AV_REORDER_TIMEOUT_US - (now - head_wait_start_us);
+		int64_t remaining_us = takion_av_reorder_timeout_us - (now - head_wait_start_us);
 		if(remaining_us <= 0)
 			return 0;
 
@@ -1102,6 +1140,8 @@ static void *takion_thread_func(void *user)
 	takion->video_queue_initialized = false;
 	takion->video_queue_head_wait_start_us = 0;
 	takion->video_queue_head_wait_seq_num = 0;
+	takion->video_skipped_total = 0;
+	takion->video_late_total = 0;
 
 	uint32_t seq_num_remote_initial;
 	if(takion_handshake(takion, &seq_num_remote_initial) != CHIAKI_ERR_SUCCESS)
@@ -1751,6 +1791,8 @@ static void takion_handle_packet_av(ChiakiTakion *takion, uint8_t base_type, uin
 	entry->buf_size = buf_size;
 	entry->packet = packet;
 
+	if(queue->seq_num_gt(queue->begin, packet.packet_index))
+		takion->video_late_total++;
 	chiaki_reorder_queue_push(queue, packet.packet_index, entry);
 	takion_av_queue_flush_with_timeout(takion, queue, head_wait, head_wait_seq_num);
 }

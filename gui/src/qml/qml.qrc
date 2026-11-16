@@ -3,6 +3,15 @@
     <file>qtquickcontrols2.conf</file>
     <file>Main.qml</file>
     <file>MainView.qml</file>
+    <file>PortalGlobe.qml</file>
+    <file>PortalConnectOverlay.qml</file>
+    <file>PortalHome.qml</file>
+    <file>PortalPinPad.qml</file>
+    <file>PortalQuickMenu.qml</file>
+    <file>PortalConnectionPage.qml</file>
+    <file>PortalTopBar.qml</file>
+    <file>PortalConsoles.qml</file>
+    <file>PortalActionPanel.qml</file>
     <file>StreamView.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>
@@ -12,6 +21,10 @@
     <file>RegistDialog.qml</file>
     <file>SteamShortcutDialog.qml</file>
     <file>SettingsDialog.qml</file>
+    <file>SettingsNavigation.qml</file>
+    <file>PortalSettings.qml</file>
+    <file>PortalSettingsModel.qml</file>
+    <file>PortalAppSettingsModel.qml</file>
     <file>DisplaySettingsDialog.qml</file>
     <file>PlaceboSettingsDialog.qml</file>
     <file>PlaceboColorMappingDialog.qml</file>
@@ -19,14 +32,20 @@
     <file>ConsolePinDialog.qml</file>
     <file>PSNLoginDialog.qml</file>
     <file>PSNTokenDialog.qml</file>
+    <file>PSNPhoneSignIn.qml</file>
     <file>ControllerMappingDialog.qml</file>
     <file>AutoConnectView.qml</file>
     <file>PsnView.qml</file>
     <file>controls/Button.qml</file>
+    <file>controls/StreamButton.qml</file>
+    <file>controls/SignalBars.qml</file>
+    <file>controls/ConnectionText.js</file>
     <file>controls/CheckBox.qml</file>
     <file>controls/ComboBox.qml</file>
     <file>controls/RadioButton.qml</file>
     <file>controls/Slider.qml</file>
     <file>controls/TextField.qml</file>
+    <file>controls/SpatialNav.js</file>
+    <file>controls/DialogButton.qml</file>
   </qresource>
 </RCC>

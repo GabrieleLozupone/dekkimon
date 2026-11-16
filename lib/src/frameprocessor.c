@@ -56,6 +56,7 @@ CHIAKI_EXPORT void chiaki_frame_processor_init(ChiakiFrameProcessor *frame_proce
 	frame_processor->unit_slots_size = 0;
 	frame_processor->flushed = true;
 	chiaki_stream_stats_reset(&frame_processor->stream_stats);
+	memset(&frame_processor->diag, 0, sizeof(frame_processor->diag));
 }
 
 CHIAKI_EXPORT void chiaki_frame_processor_fini(ChiakiFrameProcessor *frame_processor)
@@ -75,6 +76,9 @@ CHIAKI_EXPORT ChiakiErrorCode chiaki_frame_processor_alloc_frame(ChiakiFrameProc
 	frame_processor->flushed = false;
 	frame_processor->units_source_expected = packet->units_in_frame_total - packet->units_in_frame_fec;
 	frame_processor->units_fec_expected = packet->units_in_frame_fec;
+	frame_processor->diag.frames++;
+	frame_processor->diag.units_source += frame_processor->units_source_expected;
+	frame_processor->diag.units_fec += packet->units_in_frame_fec;
 	if(frame_processor->units_fec_expected < 1)
 		frame_processor->units_fec_expected = 1;
 
@@ -284,9 +288,15 @@ CHIAKI_EXPORT ChiakiFrameProcessorFlushResult chiaki_frame_processor_flush(Chiak
 	{
 		ChiakiErrorCode err = chiaki_frame_processor_fec(frame_processor);
 		if(err == CHIAKI_ERR_SUCCESS)
+		{
 			result = CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_SUCCESS;
+			frame_processor->diag.fec_recovered++;
+		}
 		else
+		{
 			result = CHIAKI_FRAME_PROCESSOR_FLUSH_RESULT_FEC_FAILED;
+			frame_processor->diag.fec_failed++;
+		}
 	}
 
 	size_t cur = 0;

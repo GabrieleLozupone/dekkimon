@@ -1,43 +1,27 @@
 import QtQuick
-import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
-
 import org.streetpea.chiaking
 
-import "controls" as C
-
 DialogView {
+    id: pinDialog
     property var consoleIndex
-    title: qsTr("Set console pin")
-    buttonText: qsTr("Set")
+    title: qsTr("Console passcode")
+    header: qsTr("Enter your four-digit Remote Play PIN. A selects a digit; X deletes.")
+    buttonText: qsTr("Save")
     buttonEnabled: pin.acceptableInput
     onAccepted: {
-        Chiaki.setConsolePin(consoleIndex, pin.text.trim());
-        stack.pop();
+        Chiaki.setConsolePin(consoleIndex, pin.text);
+        pin.text = "";
+        close();
     }
     Item {
-        GridLayout {
-            anchors {
-                top: parent.top
-                horizontalCenter: parent.horizontalCenter
-                topMargin: 20
-            }
-            columns: 2
-            rowSpacing: 10
-            columnSpacing: 20
-                        Label {
-                            Layout.alignment: Qt.AlignRight
-                            text: qsTr("Remote Play PIN (4 digits):")
-                        }
-
-                        TextField {
-                            id: pin
-                            validator: RegularExpressionValidator { regularExpression: /[0-9]{4}/ }
-                            echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                            Layout.preferredWidth: 400
-                        }
+        PortalPinPad {
+            id: pin
+            anchors.centerIn: parent
+            width: Math.min(parent.width, 480)
+            height: Math.min(parent.height, 380)
+            onAccepted: pinDialog.accepted()
+            onCancelled: pinDialog.close()
         }
-
     }
 }

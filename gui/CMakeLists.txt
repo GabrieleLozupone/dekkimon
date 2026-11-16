@@ -7,7 +7,7 @@ if(APPLE)
 	enable_language(OBJCXX)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Concurrent Svg Qml Quick Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Concurrent Svg Qml Quick Widgets Network)
 if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10.0")
 	find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 endif()
@@ -54,6 +54,15 @@ set(SOURCE_FILES
 	src/qmlsvgprovider.cpp
 	include/systemdinhibit.h
 	src/systemdinhibit.cpp
+	include/streambenchmark.h
+	src/streambenchmark.cpp
+	include/psnphonelogin.h
+	src/psnphonelogin.cpp
+	include/wifimonitor.h
+	src/wifimonitor.cpp
+	include/qrimageprovider.h
+	src/qrimageprovider.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/../third-party/qrcodegen/qrcodegen.cpp
 	)
 set(RESOURCE_FILES "")
 
@@ -92,10 +101,22 @@ add_executable(chiaki WIN32
 		${RESOURCE_FILES}
 		${SOURCE_FILES}
 )
-target_include_directories(chiaki PRIVATE include)
+target_include_directories(chiaki PRIVATE include ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/qrcodegen)
 
 add_library(placebo-libav-impl src/libav_impl.c)
 target_link_libraries(placebo-libav-impl PkgConfig::LIBPLACEBO FFMPEG::avcodec FFMPEG::avutil FFMPEG::avformat)
+# Portal-style particle globe (gui/src/qml/shaders). Optional: without Qt ShaderTools the
+# QML falls back to a static globe.
+find_package(Qt6 COMPONENTS ShaderTools)
+if(Qt6ShaderTools_FOUND)
+	qt_add_shaders(chiaki "chiaki_portal_shaders"
+		PREFIX "/portal"
+		BASE "src/qml/shaders"
+		FILES "src/qml/shaders/portalglobe.frag")
+else()
+	message(STATUS "Qt6 ShaderTools not found: the animated home globe uses its static fallback")
+endif()
+
 target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl)
 
 target_link_libraries(chiaki chiaki-lib)
@@ -104,7 +125,7 @@ if(CHIAKI_ENABLE_CLI)
 	target_link_libraries(chiaki chiaki-cli-lib)
 endif()
 
-target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets)
+target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets Qt::Network)
 if (${Qt6DBus_FOUND} AND NOT WIN32)
 	target_link_libraries(chiaki Qt::DBus)
 if (NOT APPLE)

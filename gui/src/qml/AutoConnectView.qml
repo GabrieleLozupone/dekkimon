@@ -8,7 +8,11 @@ Rectangle {
     id: view
     property bool allowClose: false
     property bool textVisible: false
-    color: "black"
+    color: "#080812"
+    PortalGlobe {
+        anchors.fill: parent
+        connecting: true
+    }
 
     function stop() {
         if (!allowClose)
@@ -41,7 +45,13 @@ Rectangle {
 
     Label {
         id: infoLabel
-        anchors.centerIn: parent
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: parent.width < 800 ? 32 : 64
+        anchors.topMargin: parent.height * 0.14
+        font.pixelSize: parent.width < 800 ? 26 : 36
+        font.weight: Font.Light
+        color: "#f5f4fb"
         opacity: view.allowClose ? 1.0 : 0.0
         visible: opacity
         text: qsTr("Waiting for console...")
@@ -62,15 +72,19 @@ Rectangle {
             anchors.centerIn: parent
             width: 70
             height: width
-            running: view.visible
+            running: false
+            visible: false
         }
         Label {
             id: closeMessageLabel
             anchors {
-                topMargin: 30
-                top: spinner.bottom
-                horizontalCenter: spinner.horizontalCenter
+                left: parent.left
+                bottom: parent.bottom
+                leftMargin: view.width < 800 ? 32 : 64
+                bottomMargin: 36
             }
+            font.pixelSize: 15
+            color: "#a9a5ba"
             opacity: textVisible ? 1.0: 0.0
             visible: opacity
             text: qsTr("Press %1 to cancel connection").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click")

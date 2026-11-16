@@ -798,6 +798,26 @@ void QmlSettings::setPsnAccountId(const QString &account_id)
     emit psnAccountIdChanged();
 }
 
+QString QmlSettings::psnOnlineId() const
+{
+    return settings->GetPsnOnlineId();
+}
+
+void QmlSettings::setPsnOnlineId(const QString &online_id)
+{
+    settings->SetPsnOnlineId(online_id);
+    emit psnOnlineIdChanged();
+}
+
+void QmlSettings::notifyPsnCredentialsChanged()
+{
+    emit psnAuthTokenChanged();
+    emit psnRefreshTokenChanged();
+    emit psnAuthTokenExpiryChanged();
+    emit psnAccountIdChanged();
+    emit psnOnlineIdChanged();
+}
+
 bool QmlSettings::mouseTouchEnabled() const
 {
     return settings->GetMouseTouchEnabled();
@@ -1946,6 +1966,7 @@ void QmlSettings::refreshAllKeys()
     emit psnRefreshTokenChanged();
     emit psnAuthTokenExpiryChanged();
     emit psnAccountIdChanged();
+    emit psnOnlineIdChanged();
     emit mouseTouchEnabledChanged();
     emit keyboardEnabledChanged();
     emit dpadTouchEnabledChanged();

@@ -1093,6 +1093,17 @@ void Settings::SetPsnAccountId(QString account_id)
 	settings.setValue("settings/psn_account_id", account_id);
 }
 
+// PSN online ID (display name), shown in Settings > Remote access.
+QString Settings::GetPsnOnlineId() const
+{
+	return settings.value("settings/psn_online_id").toString();
+}
+
+void Settings::SetPsnOnlineId(QString online_id)
+{
+	settings.setValue("settings/psn_online_id", online_id);
+}
+
 ChiakiConnectVideoProfile Settings::GetVideoProfileLocalPS4()
 {
 	ChiakiConnectVideoProfile profile = {};

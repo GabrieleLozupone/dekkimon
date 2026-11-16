@@ -53,17 +53,33 @@ QmlController::QmlController(Controller *c, uint32_t shortcut, QObject *t, QObje
         else if (state.left_y < -30000)
             buttons |= CHIAKI_CONTROLLER_BUTTON_DPAD_UP;
 
+        static const bool input_debug = qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG");
         for (auto &k : std::as_const(key_map)) {
             const bool pressed = buttons & k.first;
             const bool old_pressed = old_buttons & k.first;
             if (pressed && !old_pressed) {
+                if (input_debug)
+                    qInfo().noquote() << "input: press" << k.second << "from" << GetVIDPID();
                 pressed_key = k.second;
                 sendKey(pressed_key);
+                // Auto-repeat only for navigation. Repeating activation buttons (A/B/Menu...)
+                // re-triggers actions, e.g. closes a menu that the first press just opened; on
+                // Steam Deck one of the two controller devices can miss the release, which made
+                // a single tap repeat for up to four seconds.
+                const bool navigation = k.second == Qt::Key_Up || k.second == Qt::Key_Down
+                    || k.second == Qt::Key_Left || k.second == Qt::Key_Right;
                 repeat_running = 0;
-                repeat_timer->start(250);
-            } else if (old_pressed && !pressed && pressed_key == k.second) {
-                repeat_timer->stop();
-                repeat_running = 1;
+                if (navigation)
+                    repeat_timer->start(250);
+                else
+                    repeat_timer->stop();
+            } else if (old_pressed && !pressed) {
+                if (input_debug)
+                    qInfo().noquote() << "input: release" << k.second << "from" << GetVIDPID();
+                if (pressed_key == k.second) {
+                    repeat_timer->stop();
+                    repeat_running = 1;
+                }
             }
         }
 
@@ -122,7 +138,10 @@ void QmlController::sendKey(Qt::Key key, Qt::KeyboardModifiers modifiers)
     // for the aliased SDL devices, but do not refresh the timestamp on
     // suppressed copies so held-button repeat can continue.
     static QHash<QString, qint64> last_key_time_by_device;
-    const QString dedup_key = GetVIDPID() + QLatin1Char(':') + QString::number(static_cast<int>(key));
+    // The same applies on Steam Deck in Gaming Mode, where the built-in controller (28de:1205)
+    // and Steam's virtual pad (28de:11ff) can both be open: different VID:PIDs, same press.
+    // Deduplicate per key across all devices; nobody navigates the UI with two pads at once.
+    const QString dedup_key = QString::number(static_cast<int>(key)) + QLatin1Char(':') + QString::number(static_cast<int>(modifiers));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const qint64 last_time = last_key_time_by_device.value(dedup_key, 0);
     if ((now - last_time) < 50)

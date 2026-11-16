@@ -38,6 +38,11 @@ typedef struct chiaki_video_receiver_t
 	ChiakiMutex waiting_for_idr_mutex;
 	bool waiting_for_idr;
 	uint64_t idr_request_last_ms; // when the IDR being waited for was last requested
+	// Consecutive frames that could not be handed to the decoder (reference missing and not
+	// substitutable, or the decoder refused them). Every later P-frame depends on them, so
+	// after a few in a row the picture cannot recover without a key frame.
+	uint32_t undecodable_streak;
+	uint64_t idr_requests_total; // diagnostics, monotonic
 	ChiakiMutex frames_lost_mutex;
 } ChiakiVideoReceiver;
 
@@ -56,6 +61,15 @@ CHIAKI_EXPORT void chiaki_video_receiver_stream_info(ChiakiVideoReceiver *video_
 CHIAKI_EXPORT void chiaki_video_receiver_av_packet(ChiakiVideoReceiver *video_receiver, ChiakiTakionAVPacket *packet);
 CHIAKI_EXPORT void chiaki_video_receiver_set_waiting_for_idr(ChiakiVideoReceiver *video_receiver, bool waiting_for_idr);
 CHIAKI_EXPORT bool chiaki_video_receiver_get_waiting_for_idr(ChiakiVideoReceiver *video_receiver);
+
+/**
+ * Ask the console for a key frame and skip P-frames until it arrives, regardless of the
+ * "IDR on FEC failure" setting. If one is already being waited for, the request is only
+ * repeated once the retry interval has passed. Safe to call from any thread.
+ * @param reason short text for the log
+ * @return true if a request was sent now
+ */
+CHIAKI_EXPORT bool chiaki_video_receiver_request_idr(ChiakiVideoReceiver *video_receiver, const char *reason);
 CHIAKI_EXPORT int32_t chiaki_video_receiver_get_frames_lost_total(ChiakiVideoReceiver *video_receiver);
 
 static inline ChiakiVideoReceiver *chiaki_video_receiver_new(struct chiaki_session_t *session, ChiakiPacketStats *packet_stats)

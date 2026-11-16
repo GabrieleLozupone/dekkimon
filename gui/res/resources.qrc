@@ -1,6 +1,30 @@
 <RCC>
   <qresource prefix="/icons">
     <file>settings-20px.svg</file>
+    <file>remote-play-controller.svg</file>
+    <file>portal/back.svg</file>
+    <file>portal/check.svg</file>
+    <file>portal/chevron.svg</file>
+    <file>portal/console.svg</file>
+    <file>portal/ps5.svg</file>
+    <file>portal/controller.svg</file>
+    <file>portal/disconnect.svg</file>
+    <file>portal/fit.svg</file>
+    <file>portal/globe.svg</file>
+    <file>portal/hdr.svg</file>
+    <file>portal/mic-off.svg</file>
+    <file>portal/mic.svg</file>
+    <file>portal/options-badge.svg</file>
+    <file>portal/options-badge-dark.svg</file>
+    <file>portal/picture.svg</file>
+    <file>portal/plus.svg</file>
+    <file>portal/power.svg</file>
+    <file>portal/rest.svg</file>
+    <file>portal/quality.svg</file>
+    <file>portal/settings.svg</file>
+    <file>portal/signal.svg</file>
+    <file>portal/stats.svg</file>
+    <file>portal/volume.svg</file>
     <file>add-24px.svg</file>
     <file>discover-24px.svg</file>
     <file>discover-off-24px.svg</file>
@@ -12,6 +36,7 @@
     <file>chiaking_macos.svg</file>
     <file>console-ps4.svg</file>
     <file>console-ps5.svg</file>
+    <file>console-ps5v.svg</file>
     <file>buttons-ps.svg</file>
     <file>buttons-deck.svg</file>
     <file>l1.svg</file>

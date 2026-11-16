@@ -239,6 +239,16 @@ hell:
 	return false;
 }
 
+CHIAKI_EXPORT void chiaki_ffmpeg_decoder_flush(ChiakiFfmpegDecoder *decoder)
+{
+	chiaki_mutex_lock(&decoder->mutex);
+	if(decoder->codec_context)
+		avcodec_flush_buffers(decoder->codec_context);
+	decoder->frame_recovered = false;
+	chiaki_mutex_unlock(&decoder->mutex);
+	CHIAKI_LOGW(decoder->log, "FFMPEG decoder flushed");
+}
+
 CHIAKI_EXPORT ChiakiFfmpegFrame chiaki_ffmpeg_decoder_pull_frame(ChiakiFfmpegDecoder *decoder, int32_t *frames_lost)
 {
 	chiaki_mutex_lock(&decoder->mutex);

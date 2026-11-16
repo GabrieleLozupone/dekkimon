@@ -80,6 +80,7 @@ class QmlSettings : public QObject
     Q_PROPERTY(QString psnAuthToken READ psnAuthToken WRITE setPsnAuthToken NOTIFY psnAuthTokenChanged)
     Q_PROPERTY(QString psnAuthTokenExpiry READ psnAuthTokenExpiry WRITE setPsnAuthTokenExpiry NOTIFY psnAuthTokenExpiryChanged)
     Q_PROPERTY(QString psnAccountId READ psnAccountId WRITE setPsnAccountId NOTIFY psnAccountIdChanged)
+    Q_PROPERTY(QString psnOnlineId READ psnOnlineId WRITE setPsnOnlineId NOTIFY psnOnlineIdChanged)
     Q_PROPERTY(bool mouseTouchEnabled READ mouseTouchEnabled WRITE setMouseTouchEnabled NOTIFY mouseTouchEnabledChanged)
     Q_PROPERTY(bool keyboardEnabled READ keyboardEnabled WRITE setKeyboardEnabled NOTIFY keyboardEnabledChanged)
     Q_PROPERTY(bool dpadTouchEnabled READ dpadTouchEnabled WRITE setDpadTouchEnabled NOTIFY dpadTouchEnabledChanged)
@@ -542,6 +543,10 @@ public:
     void setPsnAuthTokenExpiry(const QString &expiry);
 
     QString psnAccountId() const;
+    QString psnOnlineId() const;
+    void setPsnOnlineId(const QString &online_id);
+    // PSN credentials were written by C++ (sign-in / refresh): refresh QML bindings.
+    void notifyPsnCredentialsChanged();
     void setPsnAccountId(const QString &account_id);
 
     bool mouseTouchEnabled() const;
@@ -680,6 +685,7 @@ signals:
     void psnRefreshTokenChanged();
     void psnAuthTokenExpiryChanged();
     void psnAccountIdChanged();
+    void psnOnlineIdChanged();
     void mouseTouchEnabledChanged();
     void keyboardEnabledChanged();
     void dpadTouchEnabledChanged();

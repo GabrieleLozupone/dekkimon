@@ -4,11 +4,14 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
+import "controls" as C
 
 Item {
     id: root
     property list<Item> restoreFocusItems
     property bool initialAsk: false
+    // Name shown on the connection screen; set by the home screen when connecting.
+    property string portalConsoleName: ""
     readonly property bool preferSeparateStreamSettingsWindows: Chiaki.window.runtimeRendererBackend === 1 && Chiaki.session
     property bool useSeparateStreamSettingsWindows: false
     Material.theme: Material.Dark
@@ -186,8 +189,9 @@ Item {
         stack.push(registDialogComponent, {host: host, ps5: ps5});
     }
 
-    function showSettingsDialog() {
-        stack.push(settingsDialogComponent);
+    // No category: open on the category list. With a category: open that category directly.
+    function showSettingsDialog(category = -1) {
+        stack.push(settingsDialogComponent, { initialCategory: category });
     }
 
     function showDisplaySettingsDialog() {
@@ -234,8 +238,12 @@ Item {
         stack.push(steamShortcutDialogComponent, {fromReminder: fromReminder});
     }
 
+    // PSN sign-in starts with the phone/QR screen; it can switch to the on-device flow.
     function showPSNTokenDialog(psnurl, expired) {
-        stack.push(psnTokenDialogComponent, {psnurl: psnurl, expired: expired});
+        stack.push(psnPhoneSignInComponent, {psnurl: psnurl, expired: expired});
+    }
+    function showPSNTokenDialogClassic(psnurl, expired) {
+        stack.replace(psnTokenDialogComponent, {psnurl: psnurl, expired: expired});
     }
 
     function showControllerMappingDialog() {
@@ -270,13 +278,10 @@ Item {
             }
         }
 
+        // Keep the outgoing view opaque while the incoming one fades in over it: cross-fading
+        // both would let whatever is underneath (the video layer) show through mid-transition.
         replaceExit: Transition {
-            PropertyAnimation {
-                property: "opacity"
-                from: 1.0
-                to: 0.0
-                duration: 200
-            }
+            PauseAnimation { duration: 200 }
         }
     }
 
@@ -421,11 +426,19 @@ Item {
             horizontalCenter: parent.horizontalCenter
             bottomMargin: 30
         }
-        color: Material.accent
-        width: errorLayout.width + 40
-        height: errorLayout.height + 20
-        radius: 8
-        opacity: errorHideTimer.running ? 0.8 : 0.0
+        // Toast card: dark, with a warm accent bar so errors read as errors.
+        color: "#161a22"
+        border.width: 1
+        border.color: "#2b3140"
+        width: Math.min(root.width - 80, errorLayout.implicitWidth + 64)
+        height: errorLayout.implicitHeight + 36
+        radius: 22
+        opacity: errorHideTimer.running ? 0.97 : 0.0
+        Rectangle {
+            anchors { left: parent.left; top: parent.top; bottom: parent.bottom; margins: 14 }
+            width: 4; radius: 2
+            color: "#ff8a7a"
+        }
 
         Behavior on opacity { NumberAnimation { duration: 500 } }
 
@@ -436,21 +449,24 @@ Item {
             Label {
                 id: errorTitleLabel
                 Layout.alignment: Qt.AlignCenter
-                font.bold: true
-                font.pixelSize: 24
+                font.pixelSize: 20
+                color: "#ffffff"
             }
 
             Label {
                 id: errorTextLabel
                 Layout.alignment: Qt.AlignCenter
+                Layout.maximumWidth: root.width - 160
                 horizontalAlignment: Text.AlignHCenter
-                font.pixelSize: 20
+                wrapMode: Text.WordWrap
+                font.pixelSize: 16
+                color: "#c9c5d8"
             }
         }
 
         Timer {
             id: errorHideTimer
-            interval: 2000
+            interval: 3500
         }
     }
 
@@ -459,54 +475,49 @@ Item {
         property alias text: infoDialogLabel.text
         property Item restoreFocusItem
         parent: Overlay.overlay
+        width: Math.min(root.width - 80, 640)
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         modal: true
-        Material.roundedScale: Material.MediumScale
-        onOpened: infoDialogLabel.forceActiveFocus(Qt.TabFocusReason)
+        padding: 32
+        topPadding: 8
+        Overlay.modal: Rectangle { color: "#b3050810" }
+        background: Rectangle { radius: 26; color: "#161a22"; border.width: 1; border.color: "#2b3140" }
+        header: Label {
+            text: infoDialog.title
+            topPadding: 32; leftPadding: 32; rightPadding: 32; bottomPadding: 6
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            font.pixelSize: 26
+            color: "#ffffff"
+        }
+        onOpened: infoOkButton.forceActiveFocus(Qt.TabFocusReason)
         onClosed: {
             if (restoreFocusItem)
                 restoreFocusItem.forceActiveFocus(Qt.TabFocusReason);
-            infoDialogLabel.focus = false;
-        }
-
-        Component.onCompleted: {
-            header.horizontalAlignment = Text.AlignHCenter;
-            header.background = null;
         }
 
         ColumnLayout {
-            spacing: 20
+            width: parent.width
+            spacing: 26
+            Keys.onEscapePressed: infoDialog.close()
 
             Label {
                 id: infoDialogLabel
-                Keys.onEscapePressed: infoDialog.close()
-                Keys.onReturnPressed: infoDialog.close()
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                font.pixelSize: 17
+                lineHeight: 1.15
+                color: "#c9c5d8"
             }
 
-            RowLayout {
-                Layout.alignment: Qt.AlignCenter
-
-                Button {
-                    text: qsTr("OK")
-                    Material.background: Material.accent
-                    flat: true
-                    leftPadding: 50
-                    onClicked: infoDialog.close()
-                    Material.roundedScale: Material.SmallScale
-
-                    Image {
-                        anchors {
-                            left: parent.left
-                            verticalCenter: parent.verticalCenter
-                            leftMargin: 12
-                        }
-                        width: 28
-                        height: 28
-                        sourceSize: Qt.size(width, height)
-                        source: root.controllerButton("cross")
-                    }
-                }
+            C.DialogButton {
+                id: infoOkButton
+                Layout.alignment: Qt.AlignHCenter
+                text: qsTr("OK")
+                glyph: "cross"
+                onClicked: infoDialog.close()
             }
         }
     }
@@ -536,6 +547,7 @@ Item {
             Chiaki.settings.psnAuthToken = ""
             Chiaki.settings.psnAuthTokenExpiry = ""
             Chiaki.settings.psnAccountId = ""
+            Chiaki.settings.psnOnlineId = ""
             root.showPSNTokenDialog(true);
         }
 
@@ -625,6 +637,11 @@ Item {
     Component {
         id: psnTokenDialogComponent
         PSNTokenDialog { }
+    }
+
+    Component {
+        id: psnPhoneSignInComponent
+        PSNPhoneSignIn { }
     }
 
     Component {

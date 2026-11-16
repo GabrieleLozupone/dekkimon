@@ -4,13 +4,63 @@
 #include <chiaki/time.h>
 #include "../include/chiaki/session.h"
 
+#include <stdio.h>
 #include <string.h>
 
 // While waiting for a requested IDR frame, request it again this often, in case the request
 // or the IDR frame itself was lost; otherwise the picture would stay frozen
 #define VIDEO_IDR_RETRY_INTERVAL_MS 1000
 
+// After this many consecutive frames that cannot be decoded, ask for a key frame even when
+// "IDR on FEC failure" is off. A single missing reference is usually patched by pointing the
+// frame at an older reference (or the console re-references after the corrupt-frame report);
+// a streak means the reference chain is broken and only a key frame can restore the picture.
+#define VIDEO_UNDECODABLE_IDR_THRESHOLD 3
+
 static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *video_receiver);
+
+CHIAKI_EXPORT bool chiaki_video_receiver_request_idr(ChiakiVideoReceiver *video_receiver, const char *reason)
+{
+	uint64_t now_ms = chiaki_time_now_monotonic_ms();
+	chiaki_mutex_lock(&video_receiver->waiting_for_idr_mutex);
+	bool was_waiting = video_receiver->waiting_for_idr;
+	bool due = !was_waiting || now_ms - video_receiver->idr_request_last_ms >= VIDEO_IDR_RETRY_INTERVAL_MS;
+	if(due)
+	{
+		// Keep waiting even if sending fails: P-frames are skipped (they cannot decode anyway)
+		// and video_receiver_retry_idr_request() sends it again on the next frame after 1 s.
+		video_receiver->waiting_for_idr = true;
+		video_receiver->idr_request_last_ms = now_ms;
+		video_receiver->idr_requests_total++;
+	}
+	chiaki_mutex_unlock(&video_receiver->waiting_for_idr_mutex);
+	if(!due)
+		return false;
+
+	ChiakiErrorCode err = stream_connection_send_idr_request(&video_receiver->session->stream_connection);
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGW(video_receiver->log, "%s; key frame request could not be sent: %s", reason, chiaki_error_string(err));
+		return false;
+	}
+	if(was_waiting)
+		CHIAKI_LOGI(video_receiver->log, "%s; requested key frame again", reason);
+	else
+		CHIAKI_LOGW(video_receiver->log, "%s; requesting key frame", reason);
+	return true;
+}
+
+static void video_receiver_note_undecodable(ChiakiVideoReceiver *video_receiver)
+{
+	video_receiver->undecodable_streak++;
+	if(video_receiver->undecodable_streak == VIDEO_UNDECODABLE_IDR_THRESHOLD)
+	{
+		char reason[96];
+		snprintf(reason, sizeof(reason), "Video stalled: %u frames in a row could not be decoded",
+			(unsigned int)video_receiver->undecodable_streak);
+		chiaki_video_receiver_request_idr(video_receiver, reason);
+	}
+}
 
 static void add_ref_frame(ChiakiVideoReceiver *video_receiver, int32_t frame)
 {
@@ -60,6 +110,8 @@ CHIAKI_EXPORT void chiaki_video_receiver_init(ChiakiVideoReceiver *video_receive
 	chiaki_mutex_init(&video_receiver->waiting_for_idr_mutex, false);
 	video_receiver->waiting_for_idr = false;
 	video_receiver->idr_request_last_ms = 0;
+	video_receiver->undecodable_streak = 0;
+	video_receiver->idr_requests_total = 0;
 	chiaki_mutex_init(&video_receiver->frames_lost_mutex, false);
 }
 
@@ -320,6 +372,7 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 					video_receiver->frames_lost_total++;
 					chiaki_mutex_unlock(&video_receiver->frames_lost_mutex);
 					CHIAKI_LOGW(video_receiver->log, "Missing reference frame %d for decoding frame %d", (int)ref_frame_index, (int)video_receiver->frame_index_cur);
+					video_receiver_note_undecodable(video_receiver);
 				}
 			}
 		}
@@ -335,9 +388,11 @@ static ChiakiErrorCode chiaki_video_receiver_flush_frame(ChiakiVideoReceiver *vi
 		{
 			succ = false;
 			CHIAKI_LOGW(video_receiver->log, "Video callback did not process frame successfully.");
+			video_receiver_note_undecodable(video_receiver);
 		}
 		else
 		{
+			video_receiver->undecodable_streak = 0;
 			add_ref_frame(video_receiver, video_receiver->frame_index_cur);
 			CHIAKI_LOGV(video_receiver->log, "Added reference %c frame %d", slice.slice_type == CHIAKI_BITSTREAM_SLICE_I ? 'I' : 'P', (int)video_receiver->frame_index_cur);
 		}

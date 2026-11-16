@@ -11,6 +11,10 @@
 #include <chiaki/time.h>
 #include "../../lib/src/utils.h"
 
+#include <chiaki/takion.h>
+#include <chiaki/videoreceiver.h>
+
+#include <QFile>
 #include <QKeyEvent>
 #include <QMutexLocker>
 #include <QtMath>
@@ -18,7 +22,10 @@
 
 #include <algorithm>
 
+#include <cstdio>
 #include <cstring>
+
+static void applyStreamExperiment(StreamSessionConnectInfo *info);
 
 #define SETSU_UPDATE_INTERVAL_MS 4
 #define STEAMDECK_UPDATE_INTERVAL_MS 4
@@ -341,6 +348,51 @@ StreamSessionConnectInfo::StreamSessionConnectInfo(
 	this->dpad_touch_shortcut4 = settings->GetDpadTouchShortcut4();
 	if(this->dpad_touch_shortcut4 > 0)
 		this->dpad_touch_shortcut4 = 1 << (this->dpad_touch_shortcut4 - 1);
+	applyStreamExperiment(this);
+}
+
+// Measurement aid for tuning on a device: if CHIAKI_EXPERIMENT_FILE names a readable file,
+// each new stream session applies its "key=value" lines on top of the saved settings without
+// changing them. Read at every session start, so a variant can be switched between sessions
+// without restarting. Unknown keys and bad values are ignored. Keys:
+//   packet_loss_max=<percent>     highest loss reported to the console (setting default 5)
+//   idr_on_fec_failure=0|1        request a key frame after an unrecoverable frame
+//   reorder_timeout_us=<us>       wait for a missing video packet before skipping it (16000)
+static void applyStreamExperiment(StreamSessionConnectInfo *info)
+{
+	const QString path = qEnvironmentVariable("CHIAKI_EXPERIMENT_FILE");
+	info->experiment.clear();
+	info->av_reorder_timeout_us = 0;
+	if(path.isEmpty())
+		return;
+	QFile file(path);
+	if(!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		return;
+	QStringList applied;
+	while(!file.atEnd())
+	{
+		const QString line = QString::fromUtf8(file.readLine()).trimmed();
+		if(line.isEmpty() || line.startsWith(QLatin1Char('#')))
+			continue;
+		const qsizetype eq = line.indexOf(QLatin1Char('='));
+		if(eq <= 0)
+			continue;
+		const QString key = line.left(eq).trimmed();
+		bool ok = false;
+		const double value = line.mid(eq + 1).trimmed().toDouble(&ok);
+		if(!ok)
+			continue;
+		if(key == QLatin1String("packet_loss_max") && value >= 0.0 && value <= 100.0)
+			info->packet_loss_max = value / 100.0;
+		else if(key == QLatin1String("idr_on_fec_failure"))
+			info->enable_idr_on_fec_failure = value != 0.0;
+		else if(key == QLatin1String("reorder_timeout_us") && value >= 1000.0 && value <= 200000.0)
+			info->av_reorder_timeout_us = static_cast<qint64>(value);
+		else
+			continue;
+		applied.append(QStringLiteral("%1=%2").arg(key).arg(value));
+	}
+	info->experiment = applied.join(QLatin1Char(' '));
 }
 
 static void AudioSettingsCb(uint32_t channels, uint32_t rate, void *user);
@@ -404,6 +456,8 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	player_index = 0;
 	memset(led_color, 0, sizeof(led_color));
 	packet_loss_max = connect_info.packet_loss_max;
+	experiment_desc = connect_info.experiment;
+	chiaki_takion_set_av_reorder_timeout_us(connect_info.av_reorder_timeout_us);
 	ChiakiErrorCode err;
 #if CHIAKI_LIB_ENABLE_PI_DECODER
 	if(connect_info.decoder == Decoder::Pi)
@@ -681,6 +735,10 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 		ConnectRumbleHaptics();
 	}
 	UpdateGamepads();
+	video_watchdog_timer = new QTimer(this);
+	video_watchdog_timer->setInterval(100);
+	connect(video_watchdog_timer, &QTimer::timeout, this, &StreamSession::VideoWatchdogTick);
+	video_watchdog_timer->start();
 	QTimer *packet_loss_timer = new QTimer(this);
 	packet_loss_timer->setInterval(200);
 	packet_loss_timer->start();
@@ -2807,6 +2865,7 @@ void StreamSession::CancelPsnConnection(bool stop_thread)
 
 void StreamSession::TriggerFfmpegFrameAvailable()
 {
+	video_fed_count.fetchAndAddRelaxed(1);
 	emit FfmpegFrameAvailable();
 	if(measured_bitrate != session.stream_connection.measured_bitrate)
 	{
@@ -2915,4 +2974,104 @@ static void FfmpegFrameCb(ChiakiFfmpegDecoder *decoder, void *user)
 {
 	auto session = reinterpret_cast<StreamSession *>(user);
 	StreamSessionPrivate::TriggerFfmpegFrameAvailable(session);
+}
+
+// Video watchdog. A stream can lose its picture for good while audio and input keep working.
+// Seen on Steam Deck (2026-11-16): when a whole frame is lost and the next one is re-pointed
+// at an older reference, FFmpeg's HEVC decoder can still find the lost picture in the
+// frame's reference set ("Could not find ref with POC n", "Error constructing the frame
+// RPS") and silently skips it; every following P-frame refers to the skipped one, so the
+// decoder accepts packets but never outputs a picture again until a key frame arrives (the
+// console only sends one when asked). Chiaki's own reference tracking cannot see this.
+// Once the first picture has been shown, while connected:
+//  - packets go into the decoder but no picture comes out for VIDEO_WATCHDOG_FED_STALL_MS
+//    (at least VIDEO_WATCHDOG_FED_MIN packets), or nothing at all for VIDEO_WATCHDOG_STALL_MS:
+//    request a key frame (P-frames are skipped until it arrives), repeated every second;
+//  - still no picture after VIDEO_WATCHDOG_FLUSH_MS: also flush the decoder.
+// Every step is logged with "Video watchdog".
+#define VIDEO_WATCHDOG_FED_STALL_MS 250
+#define VIDEO_WATCHDOG_FED_MIN 12
+#define VIDEO_WATCHDOG_STALL_MS 1500
+#define VIDEO_WATCHDOG_RETRY_MS 1000
+#define VIDEO_WATCHDOG_FLUSH_MS 4000
+
+void StreamSession::VideoWatchdogTick()
+{
+	const qint64 now_ms = static_cast<qint64>(chiaki_time_now_monotonic_ms());
+	const quint64 decoded = video_decoded_count.loadRelaxed();
+	const quint64 fed = video_fed_count.loadRelaxed();
+	if(!connected || decoded == 0)
+	{
+		// Not streaming yet (or any more): nothing to guard; restart the clock.
+		wd_last_decoded = decoded;
+		wd_fed_at_progress = fed;
+		wd_progress_ms = now_ms;
+		return;
+	}
+	if(decoded != wd_last_decoded)
+	{
+		if(wd_attempts > 0)
+			CHIAKI_LOGI(GetChiakiLog(), "Video watchdog: picture is back after %lld ms (%d key frame request(s)%s)",
+				(long long)(now_ms - wd_progress_ms), wd_attempts, wd_flushed ? ", decoder flushed" : "");
+		wd_last_decoded = decoded;
+		wd_fed_at_progress = fed;
+		wd_progress_ms = now_ms;
+		wd_attempts = 0;
+		wd_flushed = false;
+		return;
+	}
+
+	const qint64 stalled_ms = now_ms - wd_progress_ms;
+	const quint64 fed_since = fed - wd_fed_at_progress;
+	// Packets reaching the decoder without any picture coming out: the reference chain inside
+	// the decoder is broken (see above); react quickly. Otherwise wait longer before acting.
+	const bool decoder_starving = stalled_ms >= VIDEO_WATCHDOG_FED_STALL_MS && fed_since >= VIDEO_WATCHDOG_FED_MIN;
+	if(!decoder_starving && stalled_ms < VIDEO_WATCHDOG_STALL_MS)
+		return;
+	if(wd_attempts > 0 && now_ms - wd_last_action_ms < VIDEO_WATCHDOG_RETRY_MS)
+		return;
+
+	ChiakiVideoReceiver *receiver = session.stream_connection.video_receiver;
+	const bool waiting_for_idr = receiver && chiaki_video_receiver_get_waiting_for_idr(receiver);
+	if(ffmpeg_decoder && !wd_flushed && stalled_ms >= VIDEO_WATCHDOG_FLUSH_MS)
+	{
+		CHIAKI_LOGW(GetChiakiLog(), "Video watchdog: flushing decoder (no picture for %lld ms, %llu packet(s) to decoder without output)",
+			(long long)stalled_ms, (unsigned long long)fed_since);
+		chiaki_ffmpeg_decoder_flush(ffmpeg_decoder);
+		decoder_flush_generation.fetchAndAddRelaxed(1);
+		wd_flushed = true;
+	}
+	if(receiver)
+	{
+		char reason[160];
+		snprintf(reason, sizeof(reason), "Video watchdog: no picture for %lld ms (%llu packet(s) to decoder since, %s)",
+			(long long)stalled_ms, (unsigned long long)fed_since, waiting_for_idr ? "already waiting for key frame" : "not waiting for key frame");
+		chiaki_video_receiver_request_idr(receiver, reason);
+	}
+	wd_attempts++;
+	wd_last_action_ms = now_ms;
+}
+
+StreamSession::StreamDiag StreamSession::GetStreamDiag()
+{
+	StreamDiag d;
+	ChiakiStreamConnection &sc = session.stream_connection;
+	if(sc.video_receiver)
+	{
+		const ChiakiFrameProcessor &fp = sc.video_receiver->frame_processor;
+		d.frames = fp.diag.frames;
+		d.units_source = fp.diag.units_source;
+		d.units_fec = fp.diag.units_fec;
+		d.fec_recovered = fp.diag.fec_recovered;
+		d.fec_failed = fp.diag.fec_failed;
+	}
+	d.video_skipped = sc.takion.video_skipped_total;
+	d.video_late = sc.takion.video_late_total;
+	d.target_bitrate = sc.quality_target_bitrate;
+	d.rtt = sc.quality_rtt;
+	d.console_loss = sc.quality_loss;
+	d.quality_reports = sc.quality_reports;
+	d.loss_measured = sc.congestion_control.packet_loss;
+	d.loss_reported_max = packet_loss_max;
+	return d;
 }

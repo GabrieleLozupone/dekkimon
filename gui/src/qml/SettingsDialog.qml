@@ -17,9 +17,36 @@ DialogView {
     property int selectedConsole: SettingsDialog.Console.PS5
     property bool quitControllerMapping: true
     id: dialog
+    property alias currentCategory: bar.currentIndex
     title: qsTr("Settings")
-    header: qsTr("* Defaults in () to right of value or marked with (Default)")
     buttonVisible: false
+    chrome: false
+    // true: show the category list; false: show the category in currentCategory.
+    property bool browsing: true
+    // Category to open directly (e.g. Streaming from the quick menu); -1 = top level.
+    property int initialCategory: -1
+    function openCategory(index) {
+        browsing = false;
+        if (bar.currentIndex !== index) bar.currentIndex = index;
+        Qt.callLater(focusCurrentTabFirstItem);
+    }
+    function openCategoryList() {
+        browsing = true;
+        Qt.callLater(() => portalSettings.focusCurrent());
+    }
+    // Used by PortalAppSettingsModel for the dialogs this page owns.
+    function openKeyMapping() { openCategory(5); }
+    function openControllerMapping(reset) { controllerMappingDialog.show({ reset: reset }); }
+    function openAbout() { aboutDialog.open(); }
+    StackView.onActivated: Qt.callLater(() => {
+        if (typeof Chiaki.fetchPsnOnlineId === "function") Chiaki.fetchPsnOnlineId();
+        if (!browsing) return;
+        if (initialCategory >= 0) {
+            portalSettings.openPage(portalSettings.model.categories()[initialCategory]);
+            initialCategory = -1;
+        }
+        portalSettings.focusCurrent();
+    })
     function flickContainsItem(flick, item) {
         let current = item;
         while (current) {
@@ -136,15 +163,18 @@ DialogView {
             return;
         switch (event.key) {
         case Qt.Key_PageUp:
+            if (dialog.browsing) return;
             bar.decrementCurrentIndex();
             event.accepted = true;
             break;
         case Qt.Key_PageDown:
+            if (dialog.browsing) return;
             bar.incrementCurrentIndex();
             event.accepted = true;
             break;
         case Qt.Key_Up:
         {
+            if (dialog.browsing) return;
             const flick = activeSettingsFlick();
             if (!flick || flick.contentHeight <= flick.height || flick.contentY <= 0.001)
                 return;
@@ -154,6 +184,7 @@ DialogView {
         }
         case Qt.Key_Down:
         {
+            if (dialog.browsing) return;
             const flick = activeSettingsFlick();
             if (!flick || flick.contentHeight <= flick.height || flick.contentY >= flick.contentHeight - flick.height - 0.001)
                 return;
@@ -165,266 +196,79 @@ DialogView {
     }
 
     Item {
-        TabBar {
+        id: settingsRoot
+        // B / Escape inside a category returns to the category list first.
+        Keys.onEscapePressed: event => {
+            if (!dialog.browsing) { dialog.openCategoryList(); event.accepted = true; }
+            else event.accepted = false;
+        }
+        SettingsNavigation {
             id: bar
-            anchors {
-                top: parent.top
-                left: parent.left
-                right: parent.right
-                topMargin: 5
-            }
-            TabButton {
-                id: general
-                text: qsTr("General")
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        left: general.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 1
-                }
-            }
-
-            TabButton {
-                id: video
-                text: qsTr("Video")
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: video.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 0
-                }
-                Image {
-                    anchors {
-                        left: video.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 2
-                }
-            }
-
-            TabButton {
-                id: stream
-                text: qsTr("Stream")
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: stream.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 1
-                }
-                Image {
-                    anchors {
-                        left: stream.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 3
-                }
-            }
-
-            TabButton {
-                text: qsTr("Audio/Wifi")
-                id: audio
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: audio.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 2
-                }
-                Image {
-                    anchors {
-                        left: audio.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 4
-                }
-            }
-
-            TabButton {
-                text: qsTr("Consoles")
-                id: consoles
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: consoles.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 3
-                }
-                Image {
-                    anchors {
-                        left: consoles.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 5
-                }
-            }
-
-            TabButton {
-                text: qsTr("Keys")
-                id: keys
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: keys.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 4
-                }
-                Image {
-                    anchors {
-                        left: keys.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 6
-                }
-            }
-
-            TabButton {
-                text: qsTr("Controllers")
-                id: controllers
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: controllers.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 5
-                }
-                Image {
-                    anchors {
-                        left: controllers.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 7
-                }
-            }
-
-            TabButton {
-                text: qsTr("Remote")
-                id: remote
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        right: remote.left
-                        verticalCenter: parent.verticalCenter
-                        rightMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 6
-                }
-                Image {
-                    anchors {
-                        left: remote.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l1.svg"
-                    visible: bar.currentIndex == 8
-                }
-            }
-
-            TabButton {
-                text: qsTr("Config")
-                id: config
-                focusPolicy: Qt.NoFocus
-                Image {
-                    anchors {
-                        left: config.left
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: -15
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r1.svg"
-                    visible: bar.currentIndex == 7
-                }
-            }
+            visible: false
+            width: 0; height: 0
         }
 
+        // Portal-style settings (PortalAppSettingsModel). The legacy category view below is only
+        // used for the per-key keyboard mapping grid.
+        PortalSettings {
+            id: portalSettings
+            objectName: "appSettings"
+            visible: dialog.browsing
+            anchors.fill: parent
+            readonly property PortalAppSettingsModel model: PortalAppSettingsModel { dialog: dialog }
+            title: dialog.title
+            items: model.categories()
+            onCloseRequested: dialog.close()
+        }
+
+        // Header of an open category: back, title, description, L1/R1 hint.
+        RowLayout {
+            id: categoryHeading
+            visible: !dialog.browsing
+            anchors.top: parent.top
+            anchors.left: parent.left; anchors.right: parent.right
+            anchors.topMargin: 18; anchors.leftMargin: 24; anchors.rightMargin: 24
+            spacing: 16
+            RoundButton {
+                Layout.preferredWidth: 48; Layout.preferredHeight: 48
+                Layout.alignment: Qt.AlignTop
+                focusPolicy: Qt.NoFocus
+                icon.source: "qrc:/icons/portal/back.svg"
+                icon.width: 22; icon.height: 22; icon.color: "#ffffff"
+                background: Rectangle { radius: 24; color: parent.hovered ? "#2d3544" : "#232a36" }
+                onClicked: dialog.openCategoryList()
+                Accessible.name: qsTr("Back")
+            }
+            Column {
+                Layout.fillWidth: true
+                spacing: 4
+                Label { text: bar.categories[bar.currentIndex]; font.pixelSize: 28; color: "#ffffff" }
+                Label {
+                    width: parent.width
+                    text: bar.descriptions[bar.currentIndex]
+                    wrapMode: Text.WordWrap
+                    color: "#a9a5ba"
+                    font.pixelSize: 15
+                }
+            }
+            Row {
+                Layout.alignment: Qt.AlignTop
+                Layout.topMargin: 12
+                spacing: 8
+                Image { width: 24; height: 24; sourceSize: Qt.size(48, 48); source: "qrc:/icons/l1.svg" }
+                Image { width: 24; height: 24; sourceSize: Qt.size(48, 48); source: "qrc:/icons/r1.svg" }
+                Label { text: qsTr("Category"); color: "#cfccd9"; font.pixelSize: 15 }
+            }
+        }
         StackLayout {
+            visible: !dialog.browsing
             anchors {
-                top: bar.bottom
+                top: categoryHeading.bottom
+                topMargin: 12
                 left: parent.left
+                leftMargin: 24
                 right: parent.right
+                rightMargin: 24
                 bottom: parent.bottom
             }
             currentIndex: bar.currentIndex

@@ -157,6 +157,10 @@ typedef struct chiaki_takion_t
 	bool video_queue_initialized;
 	int64_t video_queue_head_wait_start_us;
 	uint64_t video_queue_head_wait_seq_num;
+	// Diagnostics, monotonic: video packets given up on by the reorder timeout (or queue
+	// overflow) and video packets that arrived after their slot had already been skipped.
+	uint64_t video_skipped_total;
+	uint64_t video_late_total;
 	ChiakiTakionSendBuffer send_buffer;
 	/**
 	 * send_buffer only exists from the end of the handshake until the receive loop ends.
@@ -191,6 +195,13 @@ typedef struct chiaki_takion_t
 
 
 CHIAKI_EXPORT ChiakiErrorCode chiaki_takion_connect(ChiakiTakion *takion, ChiakiTakionConnectInfo *info, chiaki_socket_t *sock);
+
+/**
+ * How long a missing video packet is waited for before it is skipped (process-wide).
+ * Values <= 0 restore the default (16 ms). Takes effect for the next missing packet.
+ */
+CHIAKI_EXPORT void chiaki_takion_set_av_reorder_timeout_us(int64_t timeout_us);
+CHIAKI_EXPORT int64_t chiaki_takion_get_av_reorder_timeout_us(void);
 CHIAKI_EXPORT void chiaki_takion_close(ChiakiTakion *takion);
 
 /**

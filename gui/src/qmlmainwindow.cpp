@@ -1,9 +1,11 @@
 #include "qmlmainwindow.h"
 #include "qmlbackend.h"
 #include "qmlsvgprovider.h"
+#include "qrimageprovider.h"
 #include "chiaki/log.h"
 #include "chiaki/time.h"
 #include "streamsession.h"
+#include "streambenchmark.h"
 
 #include <qpa/qplatformnativeinterface.h>
 
@@ -614,6 +616,12 @@ static bool detailedVerboseTelemetryEnabled()
 }
 
 #define CHIAKI_NOISY_DEBUG() if (!detailedVerboseTelemetryEnabled()) {} else qCDebug(chiakiGui)
+
+static void atomicStoreMax(std::atomic<qint64> &target, qint64 value)
+{
+    qint64 current = target.load(std::memory_order_relaxed);
+    while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
+}
 
 static std::atomic<uint64_t> placebo_verbose_log_quiet_until_us{0};
 
@@ -2733,6 +2741,42 @@ int QmlMainWindow::droppedFrames() const
     return dropped_frames;
 }
 
+int QmlMainWindow::displayHdrSupport()
+{
+    if (!placebo_vk_inst || !placebo_vulkan || surface == VK_NULL_HANDLE)
+        return -1;
+    auto get_formats = reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceFormatsKHR>(
+        placebo_vk_inst->get_proc_addr(placebo_vk_inst->instance, "vkGetPhysicalDeviceSurfaceFormatsKHR"));
+    if (!get_formats)
+        return -1;
+    uint32_t count = 0;
+    if (get_formats(placebo_vulkan->phys_device, surface, &count, nullptr) != VK_SUCCESS || count == 0)
+        return -1;
+    QVector<VkSurfaceFormatKHR> formats(static_cast<int>(count));
+    if (get_formats(placebo_vulkan->phys_device, surface, &count, formats.data()) < 0)
+        return -1;
+    formats.resize(static_cast<int>(count));
+    for (const VkSurfaceFormatKHR &f : std::as_const(formats)) {
+        if (f.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT)
+            return 1;
+    }
+    return 0;
+}
+
+QmlMainWindow::PacingSnapshot QmlMainWindow::takePacingSnapshot()
+{
+    PacingSnapshot s;
+    s.arrived = pace_arrived.exchange(0, std::memory_order_relaxed);
+    s.shown = pace_shown.exchange(0, std::memory_order_relaxed);
+    s.replaced = pace_replaced.exchange(0, std::memory_order_relaxed);
+    s.arrive_bunched = pace_bunched.exchange(0, std::memory_order_relaxed);
+    s.show_late = pace_show_late.exchange(0, std::memory_order_relaxed);
+    s.arrive_gap_max_ms = pace_arrive_gap_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
+    s.handoff_max_ms = pace_handoff_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
+    s.show_gap_max_ms = pace_show_gap_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
+    return s;
+}
+
 void QmlMainWindow::increaseDroppedFrames()
 {
     dropped_frames_current.fetchAndAddRelaxed(1);
@@ -3020,12 +3064,26 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
     if (!frame.frame)
         return;
 
+    if (decoder_delivery_us > 0) {
+        pace_arrived.fetch_add(1, std::memory_order_relaxed);
+        if (pace_last_arrive_us > 0 && decoder_delivery_us >= pace_last_arrive_us) {
+            const qint64 gap_us = decoder_delivery_us - pace_last_arrive_us;
+            atomicStoreMax(pace_arrive_gap_max_us, gap_us);
+            if (gap_us < 4000)
+                pace_bunched.fetch_add(1, std::memory_order_relaxed);
+        }
+        pace_last_arrive_us = decoder_delivery_us;
+        if (present_entry_us >= decoder_delivery_us)
+            atomicStoreMax(pace_handoff_max_us, present_entry_us - decoder_delivery_us);
+    }
+
     if (bypass_frame_queue) {
         {
             QMutexLocker locker(&direct_frame_mutex);
             if (direct_pending_frame) {
                 av_frame_free(&direct_pending_frame);
                 dropped_frames_current.fetchAndAddRelaxed(1);
+                pace_replaced.fetch_add(1, std::memory_order_relaxed);
             }
             direct_pending_frame = frame.frame;
         }
@@ -5152,16 +5210,61 @@ renderer_backend_ready:
 
     qml_engine = new QQmlEngine(this);
     qml_engine->addImageProvider(QStringLiteral("svg"), new QmlSvgProvider);
+    qml_engine->addImageProvider(QStringLiteral("qr"), new QrImageProvider);
     if (!qml_engine->incubationController())
         qml_engine->setIncubationController(quick_window->incubationController());
     connect(qml_engine, &QQmlEngine::quit, this, &QWindow::close);
 
     backend = new QmlBackend(settings, this);
     stats_overlay_widget = new StatsOverlayWidget(this, backend);
+    benchmark = new StreamBenchmark(this);
+    // Debug-only remote input (CHIAKI_INPUT_DEBUG + CHIAKI_DEBUG_INPUT_FILE): each line of the
+    // file is "key <name>" or "tap <x> <y>"; the file is consumed and the input is injected
+    // exactly like a controller key or a real mouse click. Used to test the UI over SSH.
+    if (qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG") && qEnvironmentVariableIsSet("CHIAKI_DEBUG_INPUT_FILE")) {
+        const QString input_path = qEnvironmentVariable("CHIAKI_DEBUG_INPUT_FILE");
+        auto *input_timer = new QTimer(this);
+        input_timer->setInterval(150);
+        connect(input_timer, &QTimer::timeout, this, [this, input_path]() {
+            QFile file(input_path);
+            if (!file.exists() || !file.open(QIODevice::ReadOnly))
+                return;
+            const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char(0x0a), Qt::SkipEmptyParts);
+            file.close();
+            file.remove();
+            static const QHash<QString, Qt::Key> keys = {
+                {"menu", Qt::Key_Menu}, {"return", Qt::Key_Return}, {"escape", Qt::Key_Escape},
+                {"up", Qt::Key_Up}, {"down", Qt::Key_Down}, {"left", Qt::Key_Left}, {"right", Qt::Key_Right},
+                {"pageup", Qt::Key_PageUp}, {"pagedown", Qt::Key_PageDown}, {"yes", Qt::Key_Yes}, {"no", Qt::Key_No},
+                {"ctrl+o", Qt::Key_O}};
+            for (const QString &line : lines) {
+                const QStringList parts = line.trimmed().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+                if (parts.size() == 2 && parts[0] == QLatin1String("key") && keys.contains(parts[1])) {
+                    const Qt::KeyboardModifiers mods = parts[1] == QLatin1String("ctrl+o") ? Qt::ControlModifier : Qt::NoModifier;
+                    QKeyEvent press(QEvent::KeyPress, keys.value(parts[1]), mods);
+                    QKeyEvent release(QEvent::KeyRelease, keys.value(parts[1]), mods);
+                    const QQuickItem *before = quick_window->activeFocusItem();
+                    QGuiApplication::sendEvent(this, &press);
+                    QGuiApplication::sendEvent(this, &release);
+                    const QQuickItem *after = quick_window->activeFocusItem();
+                    qInfo().noquote() << "debug input:" << line << "| focus before" << before << "after" << after;
+                } else if (parts.size() == 3 && parts[0] == QLatin1String("tap")) {
+                    const QPointF pos(parts[1].toDouble(), parts[2].toDouble());
+                    QMouseEvent press(QEvent::MouseButtonPress, pos, mapToGlobal(pos), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                    QMouseEvent release(QEvent::MouseButtonRelease, pos, mapToGlobal(pos), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                    QGuiApplication::sendEvent(this, &press);
+                    QGuiApplication::sendEvent(this, &release);
+                    qInfo().noquote() << "debug input:" << line;
+                }
+            }
+        });
+        input_timer->start();
+    }
     connect(backend, &QmlBackend::sessionChanged, this, [this, exit_app_on_stream_exit](StreamSession *s) {
         const bool preserve_startup_warmup = s && startup_warmup_preserve_next_session_change;
         startup_warmup_preserve_next_session_change = false;
         session = s;
+        benchmark->setSession(s);
         stream_session_active.storeRelease(s ? 1 : 0);
         startup_video_visible_generation.fetchAndAddRelaxed(1);
         grab_input = 0;
@@ -6795,6 +6898,15 @@ void QmlMainWindow::render()
             direct_frame = {};
         }
         if (incoming) {
+            const qint64 show_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+            pace_shown.fetch_add(1, std::memory_order_relaxed);
+            if (pace_last_show_us > 0 && show_us >= pace_last_show_us) {
+                const qint64 gap_us = show_us - pace_last_show_us;
+                atomicStoreMax(pace_show_gap_max_us, gap_us);
+                if (gap_us > 25000)
+                    pace_show_late.fetch_add(1, std::memory_order_relaxed);
+            }
+            pace_last_show_us = show_us;
             pl_unmap_avframe(placeboGpu(), &direct_frame);
             direct_frame = {};
             pl_avframe_params avparams = {};
@@ -7298,17 +7410,26 @@ void QmlMainWindow::render()
         target_csp.hdr.min_luma = 0.0f;
     }
 
-    if(target_trc)
-        hint.transfer = static_cast<pl_color_transfer>(target_trc);
+    // The display target overrides (transfer, primaries, peak) describe an HDR display. Apply
+    // them only to HDR content shown on an HDR output: a 1000-nit peak on an SDR target makes
+    // libplacebo place SDR white (and tone-mapped HDR) at a fraction of the signal range, which
+    // looks dim and washed out on an SDR screen (seen on a TV with SteamOS HDR off).
+    const bool source_hdr = pl_color_transfer_is_hdr(hint.transfer);
+    const int hint_trc = source_hdr ? target_trc : 0;
+    const int hint_prim = source_hdr ? target_prim : 0;
+    const int hint_peak = source_hdr ? target_peak : 0;
 
-    if(target_prim)
+    if(hint_trc)
+        hint.transfer = static_cast<pl_color_transfer>(hint_trc);
+
+    if(hint_prim)
     {
-        hint.primaries = static_cast<pl_color_primaries>(target_prim);
+        hint.primaries = static_cast<pl_color_primaries>(hint_prim);
         hint.hdr.prim = *pl_raw_primaries_get(hint.primaries);
     }
 
-    if(target_peak)
-        hint.hdr.max_luma = target_peak;
+    if(hint_peak)
+        hint.hdr.max_luma = hint_peak;
 
     switch(target_contrast)
     {
@@ -7379,18 +7500,24 @@ void QmlMainWindow::render()
     };
     target_frame.overlays = &overlay;
     target_frame.num_overlays = 1;
-    if(target_prim)
+    // Same rule as for the hint: overrides only when the swapchain really is HDR (SteamOS HDR
+    // on and the stream HDR); an SDR output is rendered as plain SDR.
+    const bool output_hdr = source_hdr && pl_color_transfer_is_hdr(target_frame.color.transfer);
+    const int out_trc = output_hdr ? target_trc : 0;
+    const int out_prim = output_hdr ? target_prim : 0;
+    const int out_peak = output_hdr ? target_peak : 0;
+    if(out_prim)
     {
-        target_frame.color.primaries = static_cast<pl_color_primaries>(target_prim);
+        target_frame.color.primaries = static_cast<pl_color_primaries>(out_prim);
         target_frame.color.hdr.prim = *pl_raw_primaries_get(target_frame.color.primaries);
     }
 
-    if(target_trc)
-        target_frame.color.transfer = static_cast<pl_color_transfer>(target_trc);
+    if(out_trc)
+        target_frame.color.transfer = static_cast<pl_color_transfer>(out_trc);
 
-    if(target_peak && !target_frame.color.hdr.max_luma)
+    if(out_peak && !target_frame.color.hdr.max_luma)
     {
-        target_frame.color.hdr.max_luma = target_peak;
+        target_frame.color.hdr.max_luma = out_peak;
     }
     if(!target_frame.color.hdr.min_luma)
     {
@@ -7414,6 +7541,9 @@ void QmlMainWindow::render()
                 break;
         }
     }
+    if (benchmark && stream_session_active.loadAcquire() != 0)
+        benchmark->noteColorPipeline(hint_frame ? hint_frame->color : pl_color_space{}, sw_frame.color_space,
+                                     target_frame.color, params, out_trc, out_prim, out_peak, target_contrast);
     if (quick_need_render.loadRelaxed()) {
         const bool quick_skip_next = stream_session_active.loadAcquire() != 0 && quick_render_skip_next != 0;
         if (quick_skip_next && !quick_frame) {
@@ -7657,6 +7787,11 @@ bool QmlMainWindow::handleShortcut(QKeyEvent *event)
             else
                 normalTime();
             return true;
+        case Qt::Key_F12:
+            // One-key menu toggle (home quick menu / stream menu). On Steam Deck the Steam Input
+            // layout binds a back grip (R4) to F12, like the PS button menu on PlayStation Portal.
+            emit menuRequested();
+            return true;
         default:
             break;
         }
@@ -7703,6 +7838,29 @@ bool QmlMainWindow::nvidiaCard() const
 
 bool QmlMainWindow::event(QEvent *event)
 {
+    static const bool input_debug = qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG");
+    if (input_debug) {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseButtonDblClick: {
+            auto *m = static_cast<QMouseEvent *>(event);
+            qInfo().noquote() << "input:" << event->type() << "source" << m->source() << "at" << m->position()
+                              << "device" << (m->device() ? m->device()->name() : QStringLiteral("?"));
+            break;
+        }
+        case QEvent::TouchBegin:
+        case QEvent::TouchEnd:
+        case QEvent::TouchCancel: {
+            auto *t = static_cast<QTouchEvent *>(event);
+            qInfo().noquote() << "input:" << event->type() << "points" << t->pointCount()
+                              << "at" << (t->pointCount() ? t->point(0).position() : QPointF());
+            break;
+        }
+        default:
+            break;
+        }
+    }
     switch (event->type()) {
     case QEvent::MouseMove:
     case QEvent::MouseButtonPress:
@@ -7710,6 +7868,14 @@ bool QmlMainWindow::event(QEvent *event)
         if (static_cast<QMouseEvent*>(event)->source() != Qt::MouseEventNotSynthesized)
             return true;
         if (session && !grab_input) {
+            // Touchscreen taps reach us as core-pointer events (gamescope touch-as-mouse).
+            // Keep the pointer hidden while streaming even if something restored the arrow;
+            // input still goes to the touchpad emulation below.
+            if (has_video && settings->GetHideCursor() && cursor().shape() != Qt::BlankCursor) {
+                if (input_debug)
+                    qInfo().noquote() << "input: re-hiding cursor, shape was" << cursor().shape();
+                setCursor(Qt::BlankCursor);
+            }
             if (event->type() == QEvent::MouseMove)
                 session->HandleMouseMoveEvent(static_cast<QMouseEvent*>(event), width(), height());
             else if (event->type() == QEvent::MouseButtonPress)

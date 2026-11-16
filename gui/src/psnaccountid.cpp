@@ -43,7 +43,23 @@ void PSNAccountID::handUserIDResponse(const QString& url, const QJsonDocument& j
     QString user_id = object.value("user_id").toString();
     QByteArray byte_representation = to_bytes_little_endian(std::stoll(user_id.toStdString()), 8);
     settings->SetPsnAccountId(byte_representation.toBase64());
+    settings->SetPsnOnlineId(object.value("online_id").toString());
     emit AccountIDResponse(byte_representation.toBase64());
+    emit Finished();
+}
+
+void PSNAccountID::FetchOnlineId(const QString &accessToken) {
+    QString accountInfoUrl = QString("%1/%2").arg(PSNAuth::TOKEN_URL).arg(accessToken);
+    JsonRequester* requester = new JsonRequester(this);
+    connect(requester, &JsonRequester::requestFinished, this, &PSNAccountID::handleOnlineIdResponse);
+    connect(requester, &JsonRequester::requestError, this, &PSNAccountID::handleErrorResponse);
+    requester->makeGetRequest(accountInfoUrl, basicAuthHeader, "application/json");
+}
+
+void PSNAccountID::handleOnlineIdResponse(const QString& url, const QJsonDocument& jsonDocument) {
+    const QString online_id = jsonDocument.object().value("online_id").toString();
+    settings->SetPsnOnlineId(online_id);
+    emit OnlineIdResponse(online_id);
     emit Finished();
 }
 

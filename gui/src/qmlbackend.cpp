@@ -286,6 +286,7 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     : QObject(window)
     , settings(settings)
     , settings_qml(new QmlSettings(settings, this))
+    , wifi_monitor(new WifiMonitor(this))
     , window(window)
 {
     qt_msg_handler = qInstallMessageHandler(msg_handler);
@@ -295,6 +296,7 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     qmlRegisterUncreatableType<QmlMainWindow>(uri, 1, 0, "ChiakiWindow", {});
     qmlRegisterUncreatableType<QmlSettings>(uri, 1, 0, "ChiakiSettings", {});
     qmlRegisterUncreatableType<StreamSession>(uri, 1, 0, "ChiakiSession", {});
+    qmlRegisterUncreatableType<WifiMonitor>(uri, 1, 0, "ChiakiWifi", {});
 
     QObject *frame_obj = new QObject();
     frame_thread = new QThread(frame_obj);
@@ -1113,6 +1115,19 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
             qCInfo(chiakiGui) << "Falling back to software decoder";
     }
 
+    // "H.265 HDR" means "HDR when the display can show it". If the display path refuses HDR10
+    // right now (SteamOS HDR off, SDR TV), ask the console for SDR instead: an HDR stream would
+    // only be tone-mapped back to SDR here, which costs quality and looks washed out.
+    if (session_info.video_profile.codec == CHIAKI_CODEC_H265_HDR && window) {
+        const int display_hdr = window->displayHdrSupport();
+        if (display_hdr == 0) {
+            session_info.video_profile.codec = CHIAKI_CODEC_H265;
+            qCInfo(chiakiGui) << "Display HDR is off (compositor offers no HDR10 output): requesting SDR H.265 instead of H.265 HDR";
+        } else {
+            qCInfo(chiakiGui) << "Display HDR check:" << (display_hdr > 0 ? "HDR10 available, keeping H.265 HDR" : "unknown, keeping H.265 HDR");
+        }
+    }
+
     try {
         session = new StreamSession(session_info, this);
     } catch (const Exception &e) {
@@ -1130,6 +1145,7 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
         ChiakiFfmpegFrame frame = chiaki_ffmpeg_decoder_pull_frame(decoder, &frames_lost);
         if (!frame.frame)
             return;
+        session->NoteDecodedFrame();
         logDecoderDeliveryStats(static_cast<qint64>(chiaki_time_now_monotonic_us()), frames_lost, frame.recovered);
         logDecoderFramePtsStats(static_cast<qint64>(chiaki_time_now_monotonic_us()), frame.pts, frame.duration);
         if (frame.recovered)
@@ -2554,13 +2570,31 @@ void QmlBackend::initPsnAuth(const QUrl &url, const QJSValue &callback)
         if (cb.isCallable())
             cb.call({error, false, true});
     });
-    connect(psnId, &PSNAccountID::AccountIDResponse, this, [cb]() {
+    connect(psnId, &PSNAccountID::AccountIDResponse, this, [this, cb]() {
+        settings_qml->notifyPsnCredentialsChanged();
         if (cb.isCallable())
             cb.call({QString("[I] PSN Remote Connection Tokens Generated."), true, true});
     });
     connect(psnId, &PSNAccountID::Finished, psnId, &QObject::deleteLater);
     psnId->GetPsnAccountId(code);
     emit psnTokenChanged();
+}
+
+void QmlBackend::fetchPsnOnlineId()
+{
+    const QString token = settings->GetPsnAuthToken();
+    if (token.isEmpty() || !settings->GetPsnOnlineId().isEmpty() || token == psn_online_id_token)
+        return;
+    psn_online_id_token = token;
+    PSNAccountID *psnId = new PSNAccountID(settings, this);
+    connect(psnId, &PSNAccountID::OnlineIdResponse, this, [this](const QString &) {
+        settings_qml->notifyPsnCredentialsChanged();
+    });
+    connect(psnId, &PSNAccountID::AccountIDError, this, [](const QString &, const QString &error) {
+        qCWarning(chiakiGui) << "Could not read PSN online ID:" << error;
+    });
+    connect(psnId, &PSNAccountID::Finished, psnId, &QObject::deleteLater);
+    psnId->FetchOnlineId(token);
 }
 
 void QmlBackend::refreshAuth()
@@ -2570,8 +2604,9 @@ void QmlBackend::refreshAuth()
         qCWarning(chiakiGui) << "Could not refresh token. Automatic PSN Connection Unavailable!" << error;
     });
     connect(psnToken, &PSNToken::UnauthorizedError, this, &QmlBackend::psnCredsExpired);
-    connect(psnToken, &PSNToken::PSNTokenSuccess, this, []() {
+    connect(psnToken, &PSNToken::PSNTokenSuccess, this, [this]() {
         qCWarning(chiakiGui) << "PSN Remote Connection Tokens Refreshed.";
+        settings_qml->notifyPsnCredentialsChanged();
     });
     connect(psnToken, &PSNToken::PSNTokenSuccess, this, &QmlBackend::updatePsnHosts);
     connect(psnToken, &PSNToken::Finished, psnToken, &QObject::deleteLater);
@@ -2670,4 +2705,31 @@ void PsnConnectionWorker::ConnectPsnConnection(StreamSession *session, const QSt
 {
     ChiakiErrorCode result = session->ConnectPsnConnection(duid, ps5);
     emit resultReady(result);
+}
+
+QString QmlBackend::startPsnPhoneLogin()
+{
+    if (!psn_phone_login) {
+        psn_phone_login = new PsnPhoneLogin(this);
+        connect(psn_phone_login, &PsnPhoneLogin::phoneConnected, this, &QmlBackend::psnPhoneLoginConnected);
+        connect(psn_phone_login, &PsnPhoneLogin::redirectReceived, this, &QmlBackend::psnPhoneLoginRedirect);
+        connect(psn_phone_login, &PsnPhoneLogin::expired, this, &QmlBackend::psnPhoneLoginExpired);
+    }
+    const QString page = psn_phone_login->start(psnLoginUrl(), QString::fromStdString(PSNAuth::REDIRECT_PAGE));
+    if (page.isEmpty())
+        qCWarning(chiakiGui) << "Phone sign-in server failed:" << psn_phone_login->errorString();
+    else
+        qCInfo(chiakiGui) << "Phone sign-in page ready on the local network";
+    return page;
+}
+
+void QmlBackend::stopPsnPhoneLogin()
+{
+    if (psn_phone_login)
+        psn_phone_login->stop();
+}
+
+QString QmlBackend::psnPhoneLoginError() const
+{
+    return psn_phone_login ? psn_phone_login->errorString() : QString();
 }

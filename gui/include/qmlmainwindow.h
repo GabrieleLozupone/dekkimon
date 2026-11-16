@@ -39,6 +39,7 @@ Q_DECLARE_LOGGING_CATEGORY(chiakiGui);
 
 class Settings;
 class StreamSession;
+class StreamBenchmark;
 class QmlBackend;
 class QOffscreenSurface;
 class QOpenGLContext;
@@ -126,6 +127,26 @@ public:
     void setZoomFactor(float factor);
 
     double queueDepthAverage() const;
+
+    // Per-second video pacing for the benchmark CSV, reset by every call.
+    //  arrived:  decoded frames handed to the window (presentFrame with a picture)
+    //  shown:    new stream frames picked up by the render thread
+    //  replaced: frames overwritten before they were rendered (direct-frame mode)
+    //  arrive_gap_max_ms: largest interval between decoder outputs (timed on the decoder thread)
+    //  handoff_max_ms: largest delay from decoder output to the GUI thread receiving the frame
+    //  show_gap_max_ms: largest interval between consecutive pickups by the render thread
+    //  arrive_bunched: decoder outputs < 4 ms after the previous one (decoder or network burst)
+    //  show_late: pickups > 25 ms after the previous one (render/present stall or missing frames)
+    struct PacingSnapshot
+    {
+        int arrived = 0, shown = 0, replaced = 0, arrive_bunched = 0, show_late = 0;
+        double arrive_gap_max_ms = 0.0, handoff_max_ms = 0.0, show_gap_max_ms = 0.0;
+    };
+    PacingSnapshot takePacingSnapshot();
+    // Whether the display path currently accepts HDR10 output: 1 = yes, 0 = no (e.g. SteamOS
+    // HDR turned off, SDR TV), -1 = unknown (not Vulkan / no surface yet). Asks the Vulkan
+    // surface, so it follows the compositor's current state. GUI thread.
+    int displayHdrSupport();
     double pendingFrameAge() const;
     QString describePlaceboDiscardReason(qint64 now_us) const;
 
@@ -318,6 +339,10 @@ private:
     bool is_window_adjustable = false;
     bool is_stream_window_adjustable = false;
     QAtomicInteger<int> dropped_frames_current = 0;
+    std::atomic<int> pace_arrived{0}, pace_shown{0}, pace_replaced{0}, pace_bunched{0}, pace_show_late{0};
+    std::atomic<qint64> pace_arrive_gap_max_us{0}, pace_handoff_max_us{0}, pace_show_gap_max_us{0};
+    qint64 pace_last_arrive_us = 0; // GUI thread only (presentFrame)
+    qint64 pace_last_show_us = 0;   // render thread only
     bool going_full = false;
     VideoMode video_mode = VideoMode::Normal;
     float zoom_factor = 0;
@@ -326,6 +351,7 @@ private:
 
     QmlBackend *backend = {};
     StreamSession *session = {};
+    StreamBenchmark *benchmark = nullptr;
     AVBufferRef *vulkan_hw_dev_ctx = nullptr;
     std::atomic<double> queue_depth_average{0.0};
     QAtomicInteger<int> queue_depth_cached = 0;
