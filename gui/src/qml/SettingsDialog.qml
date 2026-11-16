@@ -37,7 +37,8 @@ DialogView {
     // Used by PortalAppSettingsModel for the dialogs this page owns.
     function openKeyMapping() { openCategory(5); }
     function openControllerMapping(reset) { controllerMappingDialog.show({ reset: reset }); }
-    function openAbout() { aboutDialog.open(); }
+    function captureKey(value, callback) { keyDialog.show({ value: value, callback: callback }); }
+    function openAbout() { aboutDialog.restoreFocusItem = Window.window ? Window.window.activeFocusItem : null; aboutDialog.open(); }
     StackView.onActivated: Qt.callLater(() => {
         if (typeof Chiaki.fetchPsnOnlineId === "function") Chiaki.fetchPsnOnlineId();
         if (!browsing) return;
@@ -2942,7 +2943,6 @@ DialogView {
                     }
                     else
                     {
-                        controllerMappingChange.forceActiveFocus(Qt.TabFocusReason);
                         root.showControllerMappingDialog();
                         quitControllerMapping = false;
                         controllerMappingDialog.resetFocus = false;
@@ -2952,170 +2952,61 @@ DialogView {
             }
         }
 
-        Dialog {
+        AboutDialog {
             id: aboutDialog
-            parent: Overlay.overlay
-            x: Math.round((root.width - width) / 2)
-            y: Math.round((root.height - height) / 2)
-            title: qsTr("About %1-ng").arg(Qt.application.name)
-            modal: true
-            standardButtons: Dialog.Ok
-            Material.roundedScale: Material.MediumScale
-            onAboutToHide: aboutButton.forceActiveFocus(Qt.TabFocusReason)
-
-            RowLayout {
-                spacing: 50
-                onVisibleChanged: if (visible) forceActiveFocus(Qt.TabFocusReason)
-                Keys.onReturnPressed: aboutDialog.close()
-                Keys.onEscapePressed: aboutDialog.close()
-
-                Image {
-                    Layout.preferredWidth: 200
-                    fillMode: Image.PreserveAspectFit
-                    verticalAlignment: Image.AlignTop
-                    source: "qrc:icons/chiaking-logo.svg"
-                }
-
-                Label {
-                    Layout.preferredWidth: 400
-                    verticalAlignment: Text.AlignTop
-                    wrapMode: Text.Wrap
-                    text: "<h1>chiaki-ng</h1> by Street Pea, version %1
-                        <h2>Fork of Chiaki</h2> by Florian Markl at version 2.1.1
-
-                        <p>This program is free software: you can redistribute it and/or modify
-                        it under the terms of the GNU Affero General Public License version 3
-                        as published by the Free Software Foundation.</p>
-
-                        <p>This program is distributed in the hope that it will be useful,
-                        but WITHOUT ANY WARRANTY; without even the implied warranty of
-                        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-                        GNU General Public License for more details.</p>".arg(Qt.application.version)
-                }
-            }
         }
 
-        Dialog {
+        PortalMessageDialog {
             id: keyDialog
-            focus: false
             property int buttonValue
             property var buttonCallback
-            property var keysIndex
-            parent: Overlay.overlay
-            x: Math.round((root.width - width) / 2)
-            y: Math.round((root.height - height) / 2)
-            title: qsTr("Key Capture")
-            modal: true
-            standardButtons: Dialog.Close
+            title: qsTr("Press a key")
+            text: qsTr("Press the keyboard key to use for this button.")
+            buttonText: qsTr("Cancel")
+            captureKeys: true
             closePolicy: Popup.CloseOnPressOutside
-            onOpened: keyLabel.forceActiveFocus(Qt.TabFocusReason)
-            onClosed: {
-                let item = chiakiKeys.itemAt(keysIndex)
-                if(item)
-                {
-                    let item2 = item.children[1];
-                    if(item2)
-                        item2.forceActiveFocus(Qt.TabFocusReason);
-                }
-                keyLabel.focus = false;
-                focus = false;
-            }
-            Material.roundedScale: Material.MediumScale
-
             function show(opts) {
                 buttonValue = opts.value;
                 buttonCallback = opts.callback;
-                keysIndex = opts.mappingIndex;
                 open();
             }
-
-            Label {
-                id: keyLabel
-                focus: true
-                text: qsTr("Press any key to configure button or click close")
-                Keys.onReleased: (event) => {
-                    var name = Chiaki.settings.changeControllerKey(keyDialog.buttonValue, event.key);
+            onKeyCaptured: key => {
+                const name = Chiaki.settings.changeControllerKey(keyDialog.buttonValue, key);
+                if (keyDialog.buttonCallback)
                     keyDialog.buttonCallback(name);
-                    keyDialog.close();
-                }
+                keyDialog.close();
             }
         }
 
-        Dialog {
+        PortalMessageDialog {
             id: controllerMappingDialog
             property bool resetFocus: true
             property bool resetMapping: false
-            parent: Overlay.overlay
-            x: Math.round((root.width - width) / 2)
-            y: Math.round((root.height - height) / 2)
-            title: qsTr("Controller Capture")
-            modal: true
-            standardButtons: Dialog.Close
+            title: resetMapping ? qsTr("Reset controller mapping") : qsTr("Choose a controller")
+            text: resetMapping ? qsTr("Press any button on the controller whose mapping you want to reset.")
+                               : qsTr("Press any button on the controller you want to remap.")
+            // The next controller press selects the controller; it must not operate the card.
+            captureKeys: true
             closePolicy: Popup.CloseOnPressOutside
-            onOpened: {
-                controllerLabel.forceActiveFocus(Qt.TabFocusReason);
-                Chiaki.beginControllerMapping(resetMapping);
-            }
+            onOpened: Chiaki.beginControllerMapping(resetMapping)
             onClosed: {
-                if(resetFocus)
-                {
-                    if(resetMapping)
-                        controllerMappingReset.forceActiveFocus(Qt.TabFocusReason);
-                    else
-                        controllerMappingChange.forceActiveFocus(Qt.TabFocusReason);
-                    focus = false;
-                }
-                else
-                {
-                    resetFocus = true;
-                    focus = false;
-                }
                 if(quitControllerMapping)
                     Chiaki.controllerMappingQuit();
                 else
                     quitControllerMapping = true;
             }
-            Material.roundedScale: Material.MediumScale
-
             function show(opts) {
                 resetMapping = opts.reset;
                 open();
             }
-            Label {
-                id: controllerLabel
-                text: qsTr("Choose the controller by pressing any button on the controller")
-            }
         }
 
-        Dialog {
+        PortalMessageDialog {
             id: steamControllerMappingDialog
             property bool resetMapping: false
-            parent: Overlay.overlay
-            x: Math.round((root.width - width) / 2)
-            y: Math.round((root.height - height) / 2)
-            title: qsTr("Controller Managed by Steam")
-            modal: true
-            standardButtons: Dialog.Close
+            title: qsTr("Controller managed by Steam")
+            text: qsTr("Steam Input is handling this controller. Change its layout in Steam, or turn off Steam Input for this app (Properties › Controller) and try again.")
             closePolicy: Popup.NoAutoClose
-            onOpened: {
-                steamLabel.forceActiveFocus(Qt.TabFocusReason);
-            }
-            onClosed: {
-                if(resetMapping)
-                    controllerMappingReset.forceActiveFocus(Qt.TabFocusReason);
-                else
-                    controllerMappingChange.forceActiveFocus(Qt.TabFocusReason);
-                focus = false;
-            }
-            Material.roundedScale: Material.MediumScale
-
-            Label {
-                id: steamLabel
-                wrapMode: TextEdit.Wrap
-                text: qsTr("This controller is managed by Steam.\nPlease use Steam to map controller or disable Steam Input for the controller before mapping here.")
-                Keys.onReturnPressed: steamControllerMappingDialog.close();
-                Keys.onEscapePressed: steamControllerMappingDialog.close();
-            }
         }
 
         Connections {

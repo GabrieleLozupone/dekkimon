@@ -1,80 +1,46 @@
 import QtQuick
-import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
-import "controls" as C
-
+// Add a console by address. Same behaviour as before (Chiaki.addManualHost with the chosen
+// paired console, or "register on first connection"), presented as a Portal settings page.
 DialogView {
+    id: dialog
     title: qsTr("Add a console")
-    header: qsTr("Enter your console address and select its paired profile.")
-    buttonText: qsTr("Add")
-    buttonEnabled: hostField.text.trim() && (consoleCombo.model[consoleCombo.currentIndex].index != -1)
-    onAccepted: {
-        Chiaki.addManualHost(consoleCombo.model[consoleCombo.currentIndex].index, hostField.text.trim());
-        close();
+    chrome: false
+    buttonVisible: false
+    property string address: ""
+    // Index into pairedOptions; 0 = first paired console (or "register on first connection").
+    property int pairedChoice: 0
+    readonly property var hosts: Chiaki.settings.registeredHosts
+    readonly property var pairedOptions: {
+        let m = [];
+        for (let i = 0; i < hosts.length; ++i) {
+            const h = hosts[i];
+            m.push({ label: h.name, detail: Chiaki.settings.streamerMode ? "" : h.mac, index: i });
+        }
+        m.push({ label: qsTr("Register on first connection"),
+                 detail: qsTr("Pair the console the first time you connect to it."), index: hosts.length });
+        return m;
     }
 
-    Item {
-        GridLayout {
-            anchors {
-                top: parent.top
-                horizontalCenter: parent.horizontalCenter
-                topMargin: 20
-            }
-            columns: 2
-            rowSpacing: 20
-            columnSpacing: 20
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Console address")
-            }
-
-            C.TextField {
-                id: hostField
-                placeholderText: qsTr("IP address or hostname")
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                Layout.preferredWidth: Math.min(400, root.width - 280)
-                firstInFocusChain: true
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Paired console")
-            }
-
-            C.ComboBox {
-                id: consoleCombo
-                Layout.preferredWidth: Math.min(400, root.width - 280)
-                lastInFocusChain: true
-                textRole: "name"
-                model: {
-                    let m = [];
-                    if(Chiaki.settings.registeredHosts.length > 0)
-                    {
-                        m.push({
-                            name: qsTr("Select an Option"),
-                            index: -1,
-                        });
-                    }
-                    let i = 0;
-                    for (; i < Chiaki.settings.registeredHosts.length; ++i) {
-                        let host = Chiaki.settings.registeredHosts[i];
-                        m.push({
-                            name: "%1 (%2)".arg(Chiaki.settings.streamerMode ? "hidden" : host.mac).arg(host.name),
-                            index: i,
-                        });
-                    }
-                    m.push({
-                        name: qsTr("Register on first Connection"),
-                        index: i,
-                    });
-                    return m;
-                }
-            }
-        }
+    PortalSettings {
+        title: dialog.title
+        note: qsTr("Use this when the console is not found automatically, e.g. on another network.")
+        items: [
+            { type: "text", label: qsTr("Console address"), detail: qsTr("IP address or hostname."),
+              placeholder: "192.168.1.20", secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.address, set: v => dialog.address = v.trim() },
+            { type: "choice", label: qsTr("Paired console"), detail: qsTr("Which pairing to use for this address."),
+              options: dialog.pairedOptions, get: () => dialog.pairedChoice, set: i => dialog.pairedChoice = i },
+            { type: "action", label: qsTr("Add console"), icon: "plus",
+              enabled: () => !!dialog.address,
+              run: () => {
+                  Chiaki.addManualHost(dialog.pairedOptions[dialog.pairedChoice].index, dialog.address);
+                  dialog.close();
+              } }
+        ]
+        onCloseRequested: dialog.close()
     }
 }

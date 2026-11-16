@@ -252,13 +252,27 @@ QtObject {
     }
 
     // ---- Keyboard ---------------------------------------------------------------------------
+    // Key names assigned in this session, by button value (controllerMapping is not re-read).
+    property var keyOverrides: ({})
+    function keyRows() {
+        const rows = (Chiaki.settings.controllerMapping || []).map(k => ({
+            type: "action", label: k.buttonName,
+            value: () => m.keyOverrides[k.buttonValue] !== undefined ? m.keyOverrides[k.buttonValue] : k.keyName,
+            run: () => m.dialog.captureKey(k.buttonValue, name => {
+                const o = Object.assign({}, m.keyOverrides);
+                o[k.buttonValue] = name;
+                m.keyOverrides = o;
+            })
+        }));
+        return rows.concat([note(qsTr("Choose a button, then press the keyboard key for it."))]);
+    }
     function keyboard() {
         return [
             toggle("keyboardEnabled", qsTr("Keyboard as controller"), qsTr("Play with a keyboard using the key mapping below.")),
             toggle("mouseTouchEnabled", qsTr("Mouse as touchpad"), qsTr("Mouse movement and clicks act as the DualSense touchpad.")),
-            action(qsTr("Edit key mapping"), qsTr("Choose which key presses each controller button."), () => m.dialog.openKeyMapping(), undefined, "options-badge"),
+            page(qsTr("Edit key mapping"), qsTr("Choose which key presses each controller button."), () => m.keyRows(), "options-badge"),
             action(qsTr("Reset all keys"), qsTr("Restore the default key mapping."),
-                   () => root.showConfirmDialog(qsTr("Reset all keys"), qsTr("Restore the default key mapping?"), () => Chiaki.settings.clearKeyMapping()))
+                   () => root.showConfirmDialog(qsTr("Reset all keys"), qsTr("Restore the default key mapping?"), () => { Chiaki.settings.clearKeyMapping(); m.keyOverrides = ({}); }))
         ];
     }
 
@@ -325,7 +339,7 @@ QtObject {
             action(qsTr("Open log folder"), () => Chiaki.settings.streamerMode ? "" : Chiaki.settings.logDirectory,
                    () => Qt.openUrlExternally("file://" + Chiaki.settings.logDirectory)),
             header(qsTr("About")),
-            action(qsTr("About %1-ng").arg(Qt.application.name), "", () => m.dialog.openAbout())
+            action(qsTr("About Dekkimon"), "", () => m.dialog.openAbout())
         ];
     }
 }

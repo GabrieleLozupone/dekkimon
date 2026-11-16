@@ -15,6 +15,9 @@
     <file>StreamView.qml</file>
     <file>StreamMenuWindow.qml</file>
     <file>ConfirmDialog.qml</file>
+    <file>AboutDialog.qml</file>
+    <file>PortalProgressDialog.qml</file>
+    <file>PortalMessageDialog.qml</file>
     <file>RemindDialog.qml</file>
     <file>DialogView.qml</file>
     <file>ManualHostDialog.qml</file>

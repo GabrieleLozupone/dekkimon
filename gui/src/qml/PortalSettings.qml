@@ -19,7 +19,9 @@ import "controls/SpatialNav.js" as Nav
 //   items    page: descriptor array, or () => array;  note: footnote for the page
 //   value    page/action: () => string shown on the right
 //   run      action: (settingsView) => void
-//   text     type "text": get/set a string, placeholder, inputHint (Qt.ImhDigitsOnly...)
+//   text     type "text": get/set a string, placeholder, inputHint (Qt.ImhDigitsOnly...),
+//            secret () => bool (mask the input, e.g. streamer mode), maxLength
+//   enabled  () => bool: row shown greyed out and skipped by focus while false
 //   fmt      slider: (value) => string shown instead of the number
 //   reset    slider: () => void called by ✕ instead of setting def
 //   card     note: draw as an info card; icon optional
@@ -225,8 +227,11 @@ FocusScope {
                 Layout.preferredWidth: 200
                 horizontalAlignment: Text.AlignRight
                 text: trow.d ? String(trow.d.get()) : ""
-                placeholderText: trow.d && trow.d.placeholder ? trow.d.placeholder : ""
+                // Hidden while focused: the Material field would float it over its top edge.
+                placeholderText: !field.activeFocus && trow.d && trow.d.placeholder ? trow.d.placeholder : ""
                 inputMethodHints: trow.d && trow.d.inputHint ? trow.d.inputHint : Qt.ImhNone
+                echoMode: trow.d && trow.d.secret && trow.d.secret() ? TextInput.Password : TextInput.Normal
+                maximumLength: trow.d && trow.d.maxLength ? trow.d.maxLength : 32767
                 onEditingFinished: { if (trow.d) { trow.d.set(text); text = Qt.binding(() => trow.d ? String(trow.d.get()) : ""); } }
                 Accessible.name: trow.d ? trow.d.label : ""
             }
@@ -248,6 +253,7 @@ FocusScope {
             return "";
         }
         text: d ? d.label : ""
+        enabled: !d || !d.enabled || !!d.enabled()
         Layout.fillWidth: true
         implicitHeight: Math.max(72, rowText.implicitHeight + 26)
         leftPadding: 22; rightPadding: 20

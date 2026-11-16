@@ -1,265 +1,86 @@
 import QtQuick
-import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
-import "controls" as C
-
+// Pair (register) a console. Same backend call as before (Chiaki.registerHost with the console
+// generation as `target`), presented as a Portal settings page with a progress card. The PSN
+// account ID comes from the phone sign-in when available.
 DialogView {
+    id: dialog
     property bool ps5: true
-    property alias host: hostField.text
+    property string host: ""
+    property string onlineId: ""
+    property string accountId: Chiaki.settings.psnAccountId
+    property string pin: ""
+    property string consolePin: ""
+    // Console generations, newest first; `target` is what registerHost expects.
+    readonly property var consoles: [
+        { label: "PS5", detail: "", target: 1000100 },
+        { label: qsTr("PS4, system software 8.0 or later"), detail: "", target: 1000 },
+        { label: qsTr("PS4, system software 7.x"), detail: "", target: 900 },
+        { label: qsTr("PS4, system software before 7.0"), detail: qsTr("Uses your PSN online ID instead of the account ID."), target: 800 }
+    ]
+    property int consoleChoice: ps5 ? 0 : 1
+    readonly property bool needsOnlineId: consoles[consoleChoice].target === 800
+    readonly property bool broadcast: host.trim() === "255.255.255.255"
+    readonly property bool ready: !!host.trim() && /^[0-9]{8}$/.test(pin) && /^([0-9]{4})?$/.test(consolePin)
+                                  && (needsOnlineId ? !!onlineId : !!accountId)
     title: qsTr("Pair your PlayStation")
-    header: qsTr("Enable Remote Play on your console, then enter its pairing code below.")
-    buttonText: qsTr("Register")
-    buttonEnabled: hostField.text.trim() && pin.acceptableInput && cpin.acceptableInput && (!onlineId.visible || onlineId.text.trim()) && (!accountId.visible || accountId.text.trim())
-    StackView.onActivated: {
-        if(Chiaki.settings.psnAccountId)
-            accountId.text = Chiaki.settings.psnAccountId
-    }
-    onAccepted: {
-        let psnId = onlineId.visible ? onlineId.text.trim() : accountId.text.trim();
-        let registerOk = Chiaki.registerHost(hostField.text.trim(), psnId, pin.text.trim(), cpin.text.trim(), hostField.text.trim() == "255.255.255.255", consoleButtons.checkedButton.target, function(msg, ok, done) {
-            if (!done)
-                logArea.text += msg + "\n";
-            else
-                logDialog.standardButtons = Dialog.Close;
+    chrome: false
+    buttonVisible: false
+
+    function pair() {
+        const psnId = needsOnlineId ? onlineId : accountId;
+        progress.log = "";
+        progress.busy = true;
+        progress.title = qsTr("Pairing your PlayStation");
+        const ok = Chiaki.registerHost(host.trim(), psnId, pin, consolePin, broadcast, consoles[consoleChoice].target, function(msg, ok, done) {
+            progress.append(msg);
+            if (done) {
+                progress.busy = false;
+                progress.title = ok ? qsTr("PlayStation paired") : qsTr("Pairing did not finish");
+            }
         });
-        if (registerOk) {
-            logArea.text = "";
-            logDialog.open();
-        }
+        if (ok)
+            progress.open();
     }
 
-    Item {
-        GridLayout {
-            anchors {
-                top: parent.top
-                horizontalCenter: parent.horizontalCenter
-                topMargin: 20
-            }
-            columns: 2
-            rowSpacing: 10
-            columnSpacing: 20
+    PortalSettings {
+        title: dialog.title
+        note: qsTr("On your console open Settings › System › Remote Play › Pair Device, then enter the 8-digit code shown there.")
+        items: [
+            { type: "text", label: qsTr("Console address"),
+              detail: dialog.broadcast ? qsTr("Searching your network for the console.") : "",
+              secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.host, set: v => dialog.host = v.trim() },
+            { type: "choice", label: qsTr("Console"), options: dialog.consoles,
+              get: () => dialog.consoleChoice, set: i => dialog.consoleChoice = i },
+            { type: "text", label: qsTr("Pairing code"), detail: qsTr("8 digits, shown on the console."),
+              placeholder: "12345678", inputHint: Qt.ImhDigitsOnly, maxLength: 8,
+              secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.pin, set: v => dialog.pin = v.trim() },
+            { type: "text", label: qsTr("Console PIN"), detail: qsTr("Optional: the 4-digit PIN to start Remote Play, if you set one."),
+              inputHint: Qt.ImhDigitsOnly, maxLength: 4, secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.consolePin, set: v => dialog.consolePin = v.trim() },
+            { type: "header", label: qsTr("PlayStation Network") },
+            { type: "action", label: qsTr("Sign in with your phone"), detail: qsTr("Fills in your account automatically."), icon: "globe",
+              visible: () => !dialog.needsOnlineId && !Chiaki.settings.psnAccountId,
+              run: () => root.showPSNTokenDialog(false) },
+            { type: "text", label: qsTr("Account ID"), detail: qsTr("Filled in after signing in."),
+              visible: () => !dialog.needsOnlineId, secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.accountId, set: v => dialog.accountId = v.trim() },
+            { type: "text", label: qsTr("Online ID"), detail: qsTr("Your PSN name, case-sensitive."),
+              visible: () => dialog.needsOnlineId, secret: () => Chiaki.settings.streamerMode,
+              get: () => dialog.onlineId, set: v => dialog.onlineId = v.trim() },
+            { type: "action", label: qsTr("Pair console"), icon: "check",
+              enabled: () => dialog.ready, run: () => dialog.pair() }
+        ]
+        onCloseRequested: dialog.close()
 
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Host:")
-            }
-
-            C.TextField {
-                id: hostField
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                Layout.preferredWidth: 400
-                firstInFocusChain: true
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("PSN Online-ID:")
-                visible: onlineId.visible
-            }
-
-            C.TextField {
-                id: onlineId
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                visible: ps4_7.checked
-                placeholderText: qsTr("username, case-sensitive")
-                Layout.preferredWidth: 400
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("PSN Account-ID:")
-                visible: accountId.visible
-            }
-
-            C.TextField {
-                id: accountId
-                visible: !ps4_7.checked
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                placeholderText: qsTr("base64")
-                Layout.preferredWidth: 400 - loginButton.width - 10
-                KeyNavigation.priority: {
-                    if(readOnly)
-                        KeyNavigation.BeforeItem
-                    else
-                        KeyNavigation.AfterItem
-                }
-                KeyNavigation.up: hostField
-                KeyNavigation.right: loginButton
-                KeyNavigation.down: pin
-
-                C.Button {
-                    id: loginButton
-                    anchors {
-                        left: parent.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 10
-                    }
-                    topPadding: 18
-                    bottomPadding: 18
-                    text: qsTr("PSN Login")
-                    onClicked: stack.push(psnLoginDialogComponent, {login: true, callback: (id) => accountId.text = id})
-                    visible: !Chiaki.settings.psnAccountId
-                    Material.roundedScale: Material.SmallScale
-                    KeyNavigation.priority: KeyNavigation.BeforeItem
-                    KeyNavigation.up: hostField
-                    KeyNavigation.left: accountId
-                    KeyNavigation.right: lookupButton
-                    KeyNavigation.down: pin
-                }
-                C.Button {
-                    id: lookupButton
-                    anchors {
-                        left: loginButton.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 10
-                    }
-                    topPadding: 18
-                    bottomPadding: 18
-                    text: qsTr("Public Lookup")
-                    onClicked: stack.push(psnLoginDialogComponent, {login: false, callback: (id) => accountId.text = id})
-                    visible: !Chiaki.settings.psnAccountId
-                    Material.roundedScale: Material.SmallScale
-                    KeyNavigation.up: hostField
-                    KeyNavigation.priority: KeyNavigation.BeforeItem
-                    KeyNavigation.left: loginButton
-                    KeyNavigation.right: lookupButton
-                    KeyNavigation.down: pin
-                }
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Remote Play PIN:")
-            }
-
-            C.TextField {
-                id: pin
-                validator: RegularExpressionValidator { regularExpression: /[0-9]{8}/ }
-                Layout.preferredWidth: 400
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                KeyNavigation.priority: {
-                    if(readOnly)
-                        KeyNavigation.BeforeItem
-                    else
-                        KeyNavigation.AfterItem
-                }
-                KeyNavigation.up: accountId
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Console Pin [Optional]")
-            }
-
-            C.TextField {
-                id: cpin
-                echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-                validator: RegularExpressionValidator { regularExpression: /^$|[0-9]{4}/ }
-                Layout.preferredWidth: 400
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignRight
-                text: qsTr("Console:")
-            }
-
-            ColumnLayout {
-                spacing: 0
-
-                C.RadioButton {
-                    id: ps4_7
-                    property int target: 800
-                    text: qsTr("PS4 Firmware < 7.0")
-                }
-
-                C.RadioButton {
-                    id: ps4_75
-                    property int target: 900
-                    text: qsTr("PS4 Firmware >= 7.0, < 8.0")
-                }
-
-                C.RadioButton {
-                    id: ps4_8
-                    property int target: 1000
-                    text: qsTr("PS4 Firmware >= 8.0")
-                    checked: !ps5
-                }
-
-                C.RadioButton {
-                    id: ps5_0
-                    property int target: 1000100
-                    lastInFocusChain: true
-                    text: qsTr("PS5")
-                    checked: ps5
-                }
-            }
-        }
-
-        ButtonGroup {
-            id: consoleButtons
-            buttons: [ps4_7, ps4_75, ps4_8, ps5_0]
-        }
-
-        Item {
-            Dialog {
-                id: logDialog
-                parent: Overlay.overlay
-                x: Math.round((root.width - width) / 2)
-                y: Math.round((root.height - height) / 2)
-                title: qsTr("Pairing your PlayStation")
-                modal: true
-                closePolicy: Popup.NoAutoClose
-                standardButtons: Dialog.Cancel
-                Material.roundedScale: Material.MediumScale
-                onOpened: logArea.forceActiveFocus(Qt.TabFocusReason)
-                onClosed: stack.pop();
-
-                Flickable {
-                    id: logFlick
-                    implicitWidth: 600
-                    implicitHeight: 400
-                    clip: true
-                    contentWidth: logArea.contentWidth
-                    contentHeight: logArea.contentHeight
-                    flickableDirection: Flickable.AutoFlickIfNeeded
-                    ScrollBar.vertical: ScrollBar {
-                        id: logScrollbar
-                        policy: ScrollBar.AlwaysOn
-                        visible: logFlick.contentHeight > logFlick.implicitHeight
-                    }
-
-                    Label {
-                        id: logArea
-                        width: logFlick.width
-                        wrapMode: TextEdit.Wrap
-                        Keys.onReturnPressed: if (logDialog.standardButtons == Dialog.Close) logDialog.close()
-                        Keys.onEscapePressed: logDialog.close()
-                        Keys.onPressed: (event) => {
-                            switch (event.key) {
-                            case Qt.Key_Up:
-                                if(logScrollbar.position > 0.001)
-                                    logFlick.flick(0, 500);
-                                event.accepted = true;
-                                break;
-                            case Qt.Key_Down:
-                                if(logScrollbar.position < 1.0 - logScrollbar.size - 0.001)
-                                    logFlick.flick(0, -500);
-                                event.accepted = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Component {
-            id: psnLoginDialogComponent
-            PSNLoginDialog { }
+        PortalProgressDialog {
+            id: progress
+            onFinished: stack.pop()
         }
     }
 }

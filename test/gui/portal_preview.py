@@ -75,6 +75,7 @@ _defaults = {"placeboUpscaler": 9, "placeboDownscaler": 2, "placeboGamutMappingF
              "psnRefreshToken": "mock", "psnAuthTokenExpiry": "mock", "psnAccountId": "mock", "psnOnlineId": "SamplePlayer",
              "portGuessCount": 75, "portGuessSocketCount": 250, "logDirectory": "/home/deck/.local/share/chiaki/log",
              "resolutionLocalPS5": 4, "resolutionRemotePS5": 3, "resolutionLocalPS4": 3, "resolutionRemotePS4": 3,
+             "controllerMapping": [{"buttonName": "Cross", "buttonValue": 1, "keyName": "Return"}, {"buttonName": "Circle", "buttonValue": 2, "keyName": "Escape"}, {"buttonName": "Square", "buttonValue": 3, "keyName": "Backspace"}],
              "fpsLocalPS5": 60, "fpsRemotePS5": 60, "fpsLocalPS4": 60, "fpsRemotePS4": 60, "codecLocalPS5": 2, "codecRemotePS5": 1}
 def _qml(v):
     import json
@@ -126,6 +127,11 @@ QtObject {
   function exportSettings() {}
   function importSettings() {}
   function importPlaceboSettings() {}
+  property var profiles: ["Living room", "Travel"]
+  property string currentProfile: ""
+  function deleteProfile(p) {}
+  function changeControllerKey(v, k) { return "K"; }
+  function chooseSteamBasePath() {}
  }
  function openPlaceboOptionsLink() { return "https://example.invalid/docs"; }
  property var hiddenHosts: [{ name: "Bedroom PS4", mac: "00:00:00:00:00:02" }]
@@ -143,6 +149,23 @@ QtObject {
  function deleteHost(index) {}
  function hideHost(mac, name) {}
  function refreshPsnToken() {}
+ // Legacy dialogs (manual host, registration, Steam shortcut, controller mapping)
+ function addManualHost(index, address) {}
+ function registerHost(host, psnId, pin, cpin, broadcast, target, cb) {}
+ function createSteamShortcut(name, options, cb, steamDir) { cb("Found Steam user 1000", true, false); cb("Wrote artwork for " + name, true, false); cb("Shortcut created", true, true); }
+ property string currentControllerType: "DualSense"
+ property var currentControllerMapping: [{ buttonName: "Cross", buttonValue: 1, physicalButton: ["A"] }, { buttonName: "Circle", buttonValue: 2, physicalButton: ["B", "Back paddle"] }, { buttonName: "Square", buttonValue: 3, physicalButton: ["X"] }, { buttonName: "Triangle", buttonValue: 4, physicalButton: ["Y"] }, { buttonName: "PS", buttonValue: 16, physicalButton: [] }]
+ property bool enableAnalogStickMapping: false
+ property bool controllerMappingInProgress: false
+ property bool controllerMappingAltered: true
+ signal controllerMappingButtonQuit()
+ signal controllerMappingQuit()
+ signal controllerMappingButtonSelected(var pressedButton, int chiakiButtonValue, string chiakiButtonName)
+ signal controllerMappingSteamControllerSelected()
+ function beginControllerMapping(reset) {}
+ function controllerMappingSelectButton() {}
+ function controllerMappingApply() {}
+ function updateButton(chiakiButton, buttonName, value) {}
 }
 """)
 
@@ -257,6 +280,13 @@ ApplicationWindow {
  Component { id: pinScene
   ConsolePinDialog { objectName: "pinDialog"; anchors.fill: parent }
  }
+ Component { id: manualHostScene; ManualHostDialog { objectName: "legacy"; anchors.fill: parent } }
+ Component { id: registScene; RegistDialog { objectName: "legacy"; anchors.fill: parent; host: "192.0.2.10"; ps5: true } }
+ Component { id: profileScene; ProfileDialog { objectName: "legacy"; anchors.fill: parent } }
+ Component { id: steamShortcutScene; SteamShortcutDialog { objectName: "legacy"; anchors.fill: parent } }
+ Component { id: controllerMappingScene; ControllerMappingDialog { objectName: "legacy"; anchors.fill: parent } }
+ readonly property var legacyScenes: ({ "manual-host": manualHostScene, "regist": registScene, "profile": profileScene,
+                                       "steam-shortcut": steamShortcutScene, "controller-mapping": controllerMappingScene })
  function openRemind() {
   remindDialog.title = qsTr("Remote Play via PSN");
   remindDialog.text = qsTr("Sign in to PlayStation Network to register consoles automatically and to play away from home without port forwarding.") + "
@@ -269,11 +299,13 @@ ApplicationWindow {
   confirmDialog.callback = () => {}; confirmDialog.open();
  }
  function closeDialog() { console.log("preview: closeDialog"); }
+ function openKeyRows(view) { view.openPage(view.model.page("Edit key mapping", "", () => view.model.keyRows())); }
  function show(name) {
   scene = name;
   loader.sourceComponent = null;   // always start a scene from a fresh instance
   Chiaki.session = ["quick-stream", "leave", "picture-page", "conn-stream"].indexOf(name) >= 0 ? sampleSession : null;
   if (name === "pin") Chiaki.setConsolePin = (i, p) => {};
+  if (legacyScenes[name]) { loader.sourceComponent = legacyScenes[name]; return; }
   loader.sourceComponent = name === "psn-phone" ? psnPhoneScene : name === "pin" ? pinScene : name === "settings" ? settingsScene : name === "color-hdr" ? colorHdrScene : name === "picture" ? pictureScene
      : name === "globe" ? globeOnly : name === "sequence" ? sequenceScene
      : ["quick-stream", "leave", "picture-page", "conn-stream", "home-menu"].indexOf(name) >= 0 ? streamMenuScene : homeScene;
@@ -577,6 +609,25 @@ for scene in scenes:
         key(Qt.Key_Right, 400)                     # wraps to the first console
         key(Qt.Key_No, 600); grab("consoles-options"); key(Qt.Key_Escape, 450)
         key(Qt.Key_Yes, 600); grab("consoles-manage"); key(Qt.Key_Escape, 450)
+    elif scene == "legacy":
+        # Every screen the new UI can still open that predates the Portal redesign.
+        for name in ("manual-host", "regist", "profile", "steam-shortcut", "controller-mapping"):
+            show(name); QTest.qWait(600); grab(f"legacy-{name}")
+            if name == "steam-shortcut":
+                QMetaObject.invokeMethod(child("legacy"), "create"); QTest.qWait(600); grab("legacy-steam-progress")
+                key(Qt.Key_Escape, 400)
+        show("settings"); QTest.qWait(600)
+        dlg = child("settingsDialog")
+        QMetaObject.invokeMethod(dlg, "openAbout"); QTest.qWait(600); grab("legacy-about")
+        key(Qt.Key_Escape, 400)
+        view = child("appSettings")
+        QMetaObject.invokeMethod(window, "openKeyRows", Q_ARG("QVariant", view)); QTest.qWait(600); grab("legacy-key-mapping")
+        key(Qt.Key_Return, 500); grab("legacy-key-capture")
+        key(Qt.Key_K, 500)
+        show("controller-mapping"); QTest.qWait(600)
+        for _ in range(3): key(Qt.Key_Down, 120)
+        key(Qt.Key_Return, 500); grab("legacy-controller-button")
+        key(Qt.Key_Return, 500); grab("legacy-controller-capture")
     elif scene in ("menus", "menus-weak"):
         preset = "weak" if scene == "menus-weak" else "good"
         tag = "-weak" if preset == "weak" else ""
