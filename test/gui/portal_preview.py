@@ -86,7 +86,7 @@ pragma Singleton
 import QtQuick
 QtObject {
  property var hosts: [{ display: true, name: "Living room PS5", ps5: true, registered: true, discovered: true,
-                        state: "ready", mac: "00:00:00:00:00:01", address: "192.0.2.10", app: "Marvel's Spider-Man 2" },
+                        state: "ready", mac: "00:00:00:00:00:01", address: "192.0.2.10", app: "Lantern Valley" },
                       { display: true, name: "Bedroom PS5", ps5: true, registered: true, discovered: true,
                         state: "standby", mac: "00:00:00:00:00:03", address: "192.0.2.11", app: "" }]
  property bool autoConnect: false
@@ -233,6 +233,8 @@ ApplicationWindow {
   Text { x: 64; y: 330; text: "Game title"; color: "white"; font.pixelSize: 44; font.weight: Font.Light }
   Rectangle { x: 64; y: 400; width: 210; height: 56; radius: 28; color: "white"
    Text { anchors.centerIn: parent; text: "Play"; font.pixelSize: 22; color: "#111" } }
+  // PREVIEW_STREAM_IMAGE: an original picture to show as the stream (public screenshots).
+  Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; source: "STREAM_IMAGE_URI"; visible: source != "" }
  }
  Loader { id: loader; anchors.fill: parent }
  Component { id: globeOnly; PortalGlobe { objectName: "globe" } }
@@ -311,7 +313,7 @@ ApplicationWindow {
      : ["quick-stream", "leave", "picture-page", "conn-stream", "home-menu"].indexOf(name) >= 0 ? streamMenuScene : homeScene;
  }
 }
-""", encoding="utf-8")
+""".replace("STREAM_IMAGE_URI", Path(os.environ["PREVIEW_STREAM_IMAGE"]).resolve().as_uri() if os.environ.get("PREVIEW_STREAM_IMAGE") else ""), encoding="utf-8")
 
 errors = []
 def handler(mode, context, message):
@@ -387,6 +389,11 @@ class Svg(QQuickImageProvider):
         return img
 
 app = QGuiApplication(sys.argv[:1])
+# Same version text as the app: "<dekkimon.version> (chiaki-ng <CHIAKI_VERSION>)".
+import re as _re
+_cm = (repo / "CMakeLists.txt").read_text(encoding="utf-8")
+_cv = ".".join(_re.search(r"CHIAKI_VERSION_%s (\d+)" % k, _cm).group(1) for k in ("MAJOR", "MINOR", "PATCH"))
+app.setApplicationVersion("%s (chiaki-ng %s)" % ((repo / "dekkimon.version").read_text().split()[0], _cv))
 engine = QQmlApplicationEngine()
 engine.addImageProvider("svg", Svg())
 engine.addImageProvider("qr", Qr())
