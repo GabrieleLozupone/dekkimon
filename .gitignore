@@ -38,3 +38,7 @@ chiaki.conf
 .cache/
 *.vscode
 site/
+
+# Dekkimon
+.playwright-mcp/
+/dist/

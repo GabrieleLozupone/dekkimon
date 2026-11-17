@@ -1,2 +1,7 @@
 /test/*.inl linguist-generated=true
 /lib/*.h linguist-language=C
+
+# Dekkimon: files that run on the Deck must keep LF line endings on any checkout.
+*.sh text eol=lf
+*.desktop text eol=lf
+*.vdf text eol=lf
