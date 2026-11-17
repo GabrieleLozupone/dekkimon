@@ -53,13 +53,10 @@ QmlController::QmlController(Controller *c, uint32_t shortcut, QObject *t, QObje
         else if (state.left_y < -30000)
             buttons |= CHIAKI_CONTROLLER_BUTTON_DPAD_UP;
 
-        static const bool input_debug = qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG");
         for (auto &k : std::as_const(key_map)) {
             const bool pressed = buttons & k.first;
             const bool old_pressed = old_buttons & k.first;
             if (pressed && !old_pressed) {
-                if (input_debug)
-                    qInfo().noquote() << "input: press" << k.second << "from" << GetVIDPID();
                 pressed_key = k.second;
                 sendKey(pressed_key);
                 // Auto-repeat only for navigation. Repeating activation buttons (A/B/Menu...)
@@ -74,8 +71,6 @@ QmlController::QmlController(Controller *c, uint32_t shortcut, QObject *t, QObje
                 else
                     repeat_timer->stop();
             } else if (old_pressed && !pressed) {
-                if (input_debug)
-                    qInfo().noquote() << "input: release" << k.second << "from" << GetVIDPID();
                 if (pressed_key == k.second) {
                     repeat_timer->stop();
                     repeat_running = 1;

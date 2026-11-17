@@ -13,9 +13,6 @@ export LD_LIBRARY_PATH="$APP_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QT_QUICK_CONTROLS_STYLE=Material
 # Qt logs to the journal when stderr is not a terminal; keep everything in the bench log.
 export QT_FORCE_STDERR_LOGGING=1
-# Temporary: log controller press/release per device while diagnosing duplicated input.
-export CHIAKI_INPUT_DEBUG=1
-export CHIAKI_DEBUG_INPUT_FILE="$APP_DIR/debug-input"
 # Streaming experiments: key=value overrides applied at every stream start (see
 # applyStreamExperiment in gui/src/streamsession.cpp). No file = saved settings only.
 export CHIAKI_EXPERIMENT_FILE="$APP_DIR/experiment.conf"

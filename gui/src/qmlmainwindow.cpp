@@ -5218,48 +5218,6 @@ renderer_backend_ready:
     backend = new QmlBackend(settings, this);
     stats_overlay_widget = new StatsOverlayWidget(this, backend);
     benchmark = new StreamBenchmark(this);
-    // Debug-only remote input (CHIAKI_INPUT_DEBUG + CHIAKI_DEBUG_INPUT_FILE): each line of the
-    // file is "key <name>" or "tap <x> <y>"; the file is consumed and the input is injected
-    // exactly like a controller key or a real mouse click. Used to test the UI over SSH.
-    if (qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG") && qEnvironmentVariableIsSet("CHIAKI_DEBUG_INPUT_FILE")) {
-        const QString input_path = qEnvironmentVariable("CHIAKI_DEBUG_INPUT_FILE");
-        auto *input_timer = new QTimer(this);
-        input_timer->setInterval(150);
-        connect(input_timer, &QTimer::timeout, this, [this, input_path]() {
-            QFile file(input_path);
-            if (!file.exists() || !file.open(QIODevice::ReadOnly))
-                return;
-            const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char(0x0a), Qt::SkipEmptyParts);
-            file.close();
-            file.remove();
-            static const QHash<QString, Qt::Key> keys = {
-                {"menu", Qt::Key_Menu}, {"return", Qt::Key_Return}, {"escape", Qt::Key_Escape},
-                {"up", Qt::Key_Up}, {"down", Qt::Key_Down}, {"left", Qt::Key_Left}, {"right", Qt::Key_Right},
-                {"pageup", Qt::Key_PageUp}, {"pagedown", Qt::Key_PageDown}, {"yes", Qt::Key_Yes}, {"no", Qt::Key_No},
-                {"ctrl+o", Qt::Key_O}};
-            for (const QString &line : lines) {
-                const QStringList parts = line.trimmed().split(QLatin1Char(' '), Qt::SkipEmptyParts);
-                if (parts.size() == 2 && parts[0] == QLatin1String("key") && keys.contains(parts[1])) {
-                    const Qt::KeyboardModifiers mods = parts[1] == QLatin1String("ctrl+o") ? Qt::ControlModifier : Qt::NoModifier;
-                    QKeyEvent press(QEvent::KeyPress, keys.value(parts[1]), mods);
-                    QKeyEvent release(QEvent::KeyRelease, keys.value(parts[1]), mods);
-                    const QQuickItem *before = quick_window->activeFocusItem();
-                    QGuiApplication::sendEvent(this, &press);
-                    QGuiApplication::sendEvent(this, &release);
-                    const QQuickItem *after = quick_window->activeFocusItem();
-                    qInfo().noquote() << "debug input:" << line << "| focus before" << before << "after" << after;
-                } else if (parts.size() == 3 && parts[0] == QLatin1String("tap")) {
-                    const QPointF pos(parts[1].toDouble(), parts[2].toDouble());
-                    QMouseEvent press(QEvent::MouseButtonPress, pos, mapToGlobal(pos), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-                    QMouseEvent release(QEvent::MouseButtonRelease, pos, mapToGlobal(pos), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-                    QGuiApplication::sendEvent(this, &press);
-                    QGuiApplication::sendEvent(this, &release);
-                    qInfo().noquote() << "debug input:" << line;
-                }
-            }
-        });
-        input_timer->start();
-    }
     connect(backend, &QmlBackend::sessionChanged, this, [this, exit_app_on_stream_exit](StreamSession *s) {
         const bool preserve_startup_warmup = s && startup_warmup_preserve_next_session_change;
         startup_warmup_preserve_next_session_change = false;
@@ -7838,29 +7796,6 @@ bool QmlMainWindow::nvidiaCard() const
 
 bool QmlMainWindow::event(QEvent *event)
 {
-    static const bool input_debug = qEnvironmentVariableIsSet("CHIAKI_INPUT_DEBUG");
-    if (input_debug) {
-        switch (event->type()) {
-        case QEvent::MouseButtonPress:
-        case QEvent::MouseButtonRelease:
-        case QEvent::MouseButtonDblClick: {
-            auto *m = static_cast<QMouseEvent *>(event);
-            qInfo().noquote() << "input:" << event->type() << "source" << m->source() << "at" << m->position()
-                              << "device" << (m->device() ? m->device()->name() : QStringLiteral("?"));
-            break;
-        }
-        case QEvent::TouchBegin:
-        case QEvent::TouchEnd:
-        case QEvent::TouchCancel: {
-            auto *t = static_cast<QTouchEvent *>(event);
-            qInfo().noquote() << "input:" << event->type() << "points" << t->pointCount()
-                              << "at" << (t->pointCount() ? t->point(0).position() : QPointF());
-            break;
-        }
-        default:
-            break;
-        }
-    }
     switch (event->type()) {
     case QEvent::MouseMove:
     case QEvent::MouseButtonPress:
@@ -7872,8 +7807,6 @@ bool QmlMainWindow::event(QEvent *event)
             // Keep the pointer hidden while streaming even if something restored the arrow;
             // input still goes to the touchpad emulation below.
             if (has_video && settings->GetHideCursor() && cursor().shape() != Qt::BlankCursor) {
-                if (input_debug)
-                    qInfo().noquote() << "input: re-hiding cursor, shape was" << cursor().shape();
                 setCursor(Qt::BlankCursor);
             }
             if (event->type() == QEvent::MouseMove)
