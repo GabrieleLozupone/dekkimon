@@ -15,7 +15,15 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtTest import QTest
 repo = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 out = Path(tempfile.gettempdir()) / "chiaki-home-preview"
+# Start empty, like a fresh CI runner.
+import shutil
+shutil.rmtree(out, ignore_errors=True)
 out.mkdir(exist_ok=True)
+# Qt caches this folder's file list when the engine first reads it, and on case-sensitive
+# systems it then rejects QML files created later ("File name case mismatch"). The tests that
+# reuse this setup (portal_smoke, settings_smoke) write these files afterwards, so create them now.
+for _name in ("PortalPreview.qml", "SettingsPreview.qml"):
+    (out / _name).write_text("import QtQuick" + chr(10) + "Item {}" + chr(10), encoding="utf-8")
 module = out / "org/streetpea/chiaking"
 module.mkdir(parents=True, exist_ok=True)
 (module / "qmldir").write_text("module org.streetpea.chiaking\nsingleton Chiaki 1.0 Chiaki.qml\n")
