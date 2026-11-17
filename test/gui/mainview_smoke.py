@@ -141,7 +141,7 @@ def shot(name,w=1280,h=800):
  window.grabWindow().save(str(out/name))
 def host(name, **kw):
  return dict(name=name,display=True,registered=True,discovered=True,manual=False,
-  ps5=True,state="ready",mac=name,duid="",address="192.168.1.50",app="",**kw)
+  ps5=True,state="ready",mac=name,duid="",address="192.0.2.50",app="",**kw)
 hidden=host("Hidden");hidden["display"]=False
 ready=host("Living room PS5")
 rest=host("Bedroom PS5");rest["state"]="standby"

@@ -1,6 +1,6 @@
 """Pull and summarise Chiaki Portal stream benchmarks from a Steam Deck.
 
-    uv run python scripts/deck/bench_report.py --host deck@192.168.1.18 --key ~/.ssh/id_ed25519
+    uv run python scripts/deck/bench_report.py --host deck@<deck-ip> --key ~/.ssh/id_ed25519
     uv run python scripts/deck/bench_report.py --local path/to/bench   # already copied
 
 Each launch of the Deck build writes bench/<time>.csv (one row per second while streaming)
@@ -316,7 +316,7 @@ def report(folder):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", help="ssh target, e.g. deck@192.168.1.18")
+    ap.add_argument("--host", help="ssh target, e.g. deck@<deck-ip>")
     ap.add_argument("--key", help="ssh private key path (only passed to scp)")
     ap.add_argument("--local", help="folder with already-copied bench files")
     a = ap.parse_args()

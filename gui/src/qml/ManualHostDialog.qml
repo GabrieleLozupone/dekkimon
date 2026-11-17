@@ -30,7 +30,7 @@ DialogView {
         note: qsTr("Use this when the console is not found automatically, e.g. on another network.")
         items: [
             { type: "text", label: qsTr("Console address"), detail: qsTr("IP address or hostname."),
-              placeholder: "192.168.1.20", secret: () => Chiaki.settings.streamerMode,
+              placeholder: "192.168.0.10", secret: () => Chiaki.settings.streamerMode,
               get: () => dialog.address, set: v => dialog.address = v.trim() },
             { type: "choice", label: qsTr("Paired console"), detail: qsTr("Which pairing to use for this address."),
               options: dialog.pairedOptions, get: () => dialog.pairedChoice, set: i => dialog.pairedChoice = i },

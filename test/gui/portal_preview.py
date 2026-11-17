@@ -140,7 +140,7 @@ QtObject {
  signal psnPhoneLoginConnected(string peer)
  signal psnPhoneLoginRedirect(string url, string peer)
  signal psnPhoneLoginExpired()
- function startPsnPhoneLogin() { return "http://192.168.1.18:47990/3f9c1e0a6b7d4c2e9a1f5b8d0c3e7a21"; }
+ function startPsnPhoneLogin() { return "http://192.0.2.20:47990/3f9c1e0a6b7d4c2e9a1f5b8d0c3e7a21"; }
  function stopPsnPhoneLogin() {}
  function psnPhoneLoginError() { return ""; }
  function initPsnAuth(url, cb) { cb("ok", true, true); }
