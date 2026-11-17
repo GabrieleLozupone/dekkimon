@@ -1,36 +1,30 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: "[BUG]"
-labels: ''
+about: Something doesn't work as expected
+title: ""
+labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened**
+What you did, what you expected, and what happened instead.
 
-**Debug Log**
-Please attach a log with verbose logging enabled.
+**Steps to reproduce**
+1.
+2.
+3.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Setup**
+- Dekkimon version (Settings › Profiles & data › About Dekkimon):
+- Steam Deck model (LCD or OLED) and SteamOS version:
+- Console (PS5, PS5 Pro, PS4...) and connection (Wi-Fi at home, remote over the internet):
+- Resolution, frame rate and bitrate (Settings › Streaming):
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+**Logs**
+Attach the newest file in `~/Applications/dekkimon/logs/` and, if the problem happened during
+a stream, the session log (Settings › Profiles & data › Open log folder). Logs can include console
+names and network addresses: read them before uploading.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
-
-**Desktop (please complete the following information):**
- - OS: [e.g. SteamOS]
- - Version [e.g. 22]
- - Device [e.g. Steam Deck]
- - chiaki-ng Version [e.g. 1.6.2]
-
-**Additional context**
-Add any other context about the problem here.
+**Screenshots or video**
+If they help. Don't post screenshots that show your account details.
