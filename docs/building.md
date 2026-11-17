@@ -51,7 +51,7 @@ Before you change the UI, render it with the real GPU renderer and a mock backen
 animated globe needs the GPU because it is a shader.
 
 ```sh
-uv run --with PySide6 --with pillow python test/gui/portal_preview.py home consoles settings
+uv run --with PySide6 --with pillow --with segno python test/gui/portal_preview.py home consoles settings
 ```
 
 The pictures are written to `<temp>/chiaki-portal-preview/`. Run the script without
