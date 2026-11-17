@@ -1,15 +1,15 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+Security fixes go into the latest Dekkimon release. Please update to it (run the installer again)
+before you report a problem.
 
-Security fixes go into the latest release of chiaki-ng. Please update to it before reporting an issue.
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Please don't report security problems in public issues.
 
-Please don't report security issues in public issues, discussions or Discord.
+Report them privately on GitHub: open the [Security tab](https://github.com/GabrieleLozupone/dekkimon/security)
+and choose **Report a vulnerability**.
 
-Report them privately through GitHub instead: open the [Security tab](https://github.com/chiaki-ng/chiaki-ng/security) and choose **Report a vulnerability**, or go straight to [a new advisory](https://github.com/chiaki-ng/chiaki-ng/security/advisories/new).
-
-Include the affected version or commit, the steps or input that trigger the issue, and what you saw. A suggested fix is welcome.
-
-We'll reply in the advisory, work on a fix with you, and agree on when to publish the details once a release with the fix is out. Reporters are credited unless they ask not to be.
+If the problem is in the Remote Play protocol code that Dekkimon shares with chiaki-ng (`lib/`),
+please also tell [chiaki-ng](https://github.com/chiaki-ng/chiaki-ng/security) so both projects get
+the fix.

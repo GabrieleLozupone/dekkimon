@@ -62,3 +62,7 @@ docs/index.md
 docs/images/**
 overrides/**
 mkdocs.yml
+assets/**
+.builds/**
+doc/**
+CONTRIBUTOR_GUIDE.md
