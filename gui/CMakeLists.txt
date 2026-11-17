@@ -3,10 +3,6 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-if(APPLE)
-	enable_language(OBJCXX)
-endif()
-
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Concurrent Svg Qml Quick Widgets Network)
 if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10.0")
 	find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
@@ -14,10 +10,6 @@ endif()
 
 find_package(Qt6 COMPONENTS WebEngineQuick)
 find_package(Qt6 COMPONENTS DBus)
-
-if(WIN32)
-	add_definitions(-DWIN32_LEAN_AND_MEAN)
-endif()
 
 set(SOURCE_FILES
 	include/exception.h
@@ -64,18 +56,6 @@ set(SOURCE_FILES
 	src/qrimageprovider.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/../third-party/qrcodegen/qrcodegen.cpp
 	)
-set(RESOURCE_FILES "")
-
-if(APPLE)
-	list(APPEND RESOURCE_FILES "chiaking.icns")
-elseif(WIN32)
-	configure_file(
-		${CMAKE_CURRENT_SOURCE_DIR}/chiaking.rc.in
-		${CMAKE_CURRENT_SOURCE_DIR}/chiaking.rc
-		@ONLY)
-	list(APPEND RESOURCE_FILES "chiaking.rc")
-endif()
-
 if(CHIAKI_ENABLE_STEAMDECK_NATIVE AND LINUX)
 	list(APPEND SOURCE_FILES
 		include/sdinputcontext.h
@@ -83,22 +63,7 @@ if(CHIAKI_ENABLE_STEAMDECK_NATIVE AND LINUX)
 	)
 endif()
 
-if(APPLE)
-	list(APPEND SOURCE_FILES
-		include/macMicPermission.h
-		src/macMicPermission.m
-		include/macWakeSleep.h
-		src/macWakeSleep.cpp
-	)
-elseif(WIN32)
-	list(APPEND SOURCE_FILES
-		include/windowsWakeSleep.h
-		src/windowsWakeSleep.cpp
-	)
-endif()
-
-add_executable(chiaki WIN32
-		${RESOURCE_FILES}
+add_executable(chiaki
 		${SOURCE_FILES}
 )
 target_include_directories(chiaki PRIVATE include ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/qrcodegen)
@@ -126,11 +91,9 @@ if(CHIAKI_ENABLE_CLI)
 endif()
 
 target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets Qt::Network)
-if (${Qt6DBus_FOUND} AND NOT WIN32)
+if (${Qt6DBus_FOUND})
 	target_link_libraries(chiaki Qt::DBus)
-if (NOT APPLE)
 	target_compile_definitions(chiaki PRIVATE CHIAKI_HAVE_DBUS)
-endif()
 endif()
 if (${Qt6WebEngineQuick_FOUND})
 	target_link_libraries(chiaki Qt::WebEngineQuick)
@@ -159,24 +122,8 @@ endif()
 if(NOT CHIAKI_ENABLE_FFMPEG_DECODER)
 	message(FATAL_ERROR "Chiaki GUI requires CHIAKI_ENABLE_FFMPEG_DECODER=ON")
 endif()
-if(APPLE)
-	target_link_libraries(chiaki "-framework AVFoundation" "-framework IOKit")
-endif()
-
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fanalyzer")
-set_target_properties(chiaki PROPERTIES
-		MACOSX_BUNDLE TRUE
-		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/MacOSXBundleInfo.plist.in"
-		MACOSX_BUNDLE_BUNDLE_NAME chiaki-ng
-		MACOSX_BUNDLE_BUNDLE_VERSION ${CHIAKI_VERSION}
-		MACOSX_BUNDLE_COPYRIGHT "thestr4ng3r (AGPLv3)"
-		MACOSX_BUNDLE_GUI_IDENTIFIER "org.streetpea.chiaking"
-		MACOSX_BUNDLE_ICON_FILE chiaking.icns
-		RESOURCE "${RESOURCE_FILES}")
-
 install(TARGETS chiaki
-		RUNTIME DESTINATION bin
-		BUNDLE DESTINATION bin)
+		RUNTIME DESTINATION bin)
 install(FILES chiaking.desktop DESTINATION share/applications)
 install(FILES chiaking.png DESTINATION share/icons/hicolor/512x512/apps)
-install(FILES io.github.streetpea.Chiaki4deck.appdata.xml DESTINATION share/metainfo)
+
