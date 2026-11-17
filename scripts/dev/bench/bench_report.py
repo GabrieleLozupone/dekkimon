@@ -1,7 +1,7 @@
-"""Pull and summarise Chiaki Portal stream benchmarks from a Steam Deck.
+"""Pull and summarise Dekkimon stream benchmarks from a Steam Deck.
 
-    uv run python scripts/deck/bench_report.py --host deck@<deck-ip> --key ~/.ssh/id_ed25519
-    uv run python scripts/deck/bench_report.py --local path/to/bench   # already copied
+    uv run python scripts/dev/bench/bench_report.py --host deck@<deck-ip> --key ~/.ssh/id_ed25519
+    uv run python scripts/dev/bench/bench_report.py --local path/to/bench   # already copied
 
 Each launch of the Deck build writes bench/<time>.csv (one row per second while streaming)
 and bench/<time>.log (full app log incl. "color pipeline:" lines). This prints, per session:
@@ -11,7 +11,7 @@ pipeline with a plain-language HDR verdict. Only standard library; credentials a
 import argparse, csv, os, re, statistics, subprocess, sys, tempfile
 from pathlib import Path
 
-REMOTE_DIR = "Applications/chiaki-portal/bench"
+REMOTE_DIR = "Applications/dekkimon/bench"
 
 
 def pull(host, key, dest):
@@ -323,7 +323,7 @@ def main():
     if a.local:
         folder = Path(a.local)
     elif a.host:
-        folder = Path(tempfile.gettempdir()) / "chiaki-portal-bench"
+        folder = Path(tempfile.gettempdir()) / "dekkimon-bench"
         pull(a.host, a.key, folder)
         print("Copied to", folder)
     else:

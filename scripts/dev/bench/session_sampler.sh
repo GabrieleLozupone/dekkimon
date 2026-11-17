@@ -1,8 +1,8 @@
 #!/bin/bash
-# Per-second system sampler for Chiaki Portal sessions on Steam Deck.
+# Per-second system sampler for Dekkimon sessions on Steam Deck.
 #   session_sampler.sh <chiaki-pid> <out.csv>
 # Runs until the chiaki process exits. Reads only kernel/sysfs counters (no root, no config,
-# no credentials). Correlate with bench/<stamp>.csv by wall_time (scripts/deck/bench_report.py).
+# no credentials). Correlate with bench/<stamp>.csv by wall_time (scripts/dev/bench/bench_report.py).
 #
 # Columns
 #   wifi_*            iw station dump of the associated AP (signal, MCS/width, retries, failures,

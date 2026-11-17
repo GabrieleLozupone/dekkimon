@@ -6,8 +6,8 @@
 # ON = ICMP echo to the default gateway every 15 ms (16-byte payload, ~5 kB/s each way); the
 # replies keep the access point transmitting to the Deck so its rate control and power state
 # stay active. The current state (1/0) is written to <state-file>; session_sampler.sh copies
-# it into the "keepalive" column of bench/<stamp>.sys.csv. Started by chiaki-portal.sh only
-# when ~/Applications/chiaki-portal/ab-keepalive exists.
+# it into the "keepalive" column of bench/<stamp>.sys.csv. Started by the launcher (DEKKIMON_BENCH=1) only
+# when ~/Applications/dekkimon/ab-keepalive exists.
 set -u
 PID="$1"; STATE="$2"; BLOCK="${3:-240}"
 GW="$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')"
