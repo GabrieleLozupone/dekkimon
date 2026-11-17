@@ -1,0 +1,28 @@
+# Changelog
+
+## 0.1.0
+
+First public release of Dekkimon, based on chiaki-ng 1.10.1.
+
+**New interface**
+- Console-style home screen with an animated globe, a consoles screen, and a quick menu.
+- New in-stream menu with a connection page (Wi-Fi signal, bitrate, packet loss) and a
+  Picture & HDR page.
+- Every settings page and dialog was redone for the controller, at the Deck's 1280×800.
+- Sign in to PlayStation Network with your phone: scan a QR code on the Deck and sign in on
+  the phone.
+
+**Streaming**
+- Video no longer stays frozen after a lost frame. A watchdog asks the console for a new key
+  frame when the decoder stops producing pictures.
+- Larger network receive buffer, so Wi-Fi bursts don't overflow the socket.
+- Automatic HDR: HDR only when the screen supports it, otherwise correct SDR colors.
+
+**Steam Deck**
+- One-step installer: Steam shortcut, artwork and the recommended Steam Input layout
+  (L4 = PS button, R4 = menu, left trackpad click = touchpad).
+- Settings are imported once from the pre-release "Chiaki Portal" build.
+
+**Removed**
+- Windows, macOS, Android, Nintendo Switch, Flatpak and AppImage builds. Dekkimon is for the
+  Steam Deck only.

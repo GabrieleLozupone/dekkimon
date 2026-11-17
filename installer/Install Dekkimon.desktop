@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Install Dekkimon
+Comment=Install or update Dekkimon, PlayStation Remote Play for the Steam Deck
+Icon=system-software-install
+Terminal=true
+Exec=bash -c 'curl -fsSL -o /tmp/dekkimon-install.sh https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/dekkimon-install.sh && bash /tmp/dekkimon-install.sh; echo; read -r -p "Press Enter to close this window. "'

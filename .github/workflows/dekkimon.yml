@@ -1,0 +1,75 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  steamdeck:
+    name: Steam Deck build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submodules
+        run: git submodule update --init --depth 1 test/munit third-party/nanopb third-party/gf-complete third-party/jerasure third-party/cpp-steam-tools
+      - uses: docker/setup-buildx-action@v3
+      - name: SteamOS build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ci/steamos
+          tags: dekkimon-build
+          load: true
+          cache-from: type=gha,scope=steamos
+          cache-to: type=gha,mode=max,scope=steamos
+      - name: Build, unit tests, package
+        run: docker run --rm -v "$PWD:/src" -w /src dekkimon-build bash ci/build.sh
+      - name: Installer test
+        run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src dekkimon-build python3 test/installer/test_installer.py dist/dekkimon-steamdeck.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dekkimon-steamdeck
+          path: dist/
+          if-no-files-found: error
+
+  gui-tests:
+    name: GUI smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Smoke tests
+        run: |
+          for t in mainview_smoke portal_smoke settings_smoke; do
+            uv run --with PySide6 python test/gui/$t.py
+          done
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [steamdeck, gui-tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dekkimon-steamdeck
+          path: dist
+      - name: Check the tag matches dekkimon.version
+        run: test "${GITHUB_REF_NAME#v}" = "$(head -n1 dekkimon.version)"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "Dekkimon ${GITHUB_REF_NAME#v}" \
+            --notes-file <(awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v || index($0, v" ")==1 {f=1; next} /^## /{f=0} f' CHANGELOG.md) \
+            dist/dekkimon-steamdeck.tar.gz dist/dekkimon-install.sh "dist/Install Dekkimon.desktop" dist/SHA256SUMS
