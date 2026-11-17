@@ -15,12 +15,12 @@ jobs:
     name: Steam Deck build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Submodules
         run: git submodule update --init --depth 1 test/munit third-party/nanopb third-party/gf-complete third-party/jerasure third-party/cpp-steam-tools
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: SteamOS build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ci/steamos
           tags: dekkimon-build
@@ -31,7 +31,7 @@ jobs:
         run: docker run --rm -v "$PWD:/src" -w /src dekkimon-build bash ci/build.sh
       - name: Installer test
         run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src dekkimon-build python3 test/installer/test_installer.py dist/dekkimon-steamdeck.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dekkimon-steamdeck
           path: dist/
@@ -41,8 +41,8 @@ jobs:
     name: GUI smoke tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
       - name: Qt runtime libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
       - name: Smoke tests
@@ -59,8 +59,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dekkimon-steamdeck
           path: dist
