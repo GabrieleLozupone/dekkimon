@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launcher for the native Steam Deck build (installed under ~/Applications/<app>).
+# Dekkimon launcher (installed as ~/Applications/dekkimon/dekkimon.sh; Steam starts this file).
 # Keeps its own config/data/cache next to the binary.
 #
 # Developer measurements are opt-in: launch with DEKKIMON_BENCH=1 (e.g. Steam launch options
@@ -18,7 +18,16 @@ export QT_QUICK_CONTROLS_STYLE=Material
 # Qt logs to the journal when stderr is not a terminal; keep everything in the log file.
 export QT_FORCE_STDERR_LOGGING=1
 export QT_MESSAGE_PATTERN="%{time h:mm:ss.zzz} %{if-category}%{category}: %{endif}%{message}"
+# Lets the in-app "Add to Steam" point Steam at this launcher instead of the bare binary.
+export DEKKIMON_LAUNCHER="$APP_DIR/dekkimon.sh"
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+
+# One-time import of the settings (consoles, PSN sign-in, preferences) from the pre-release
+# "Chiaki Portal" build. The file keeps its internal name, Chiaki/Chiaki.conf.
+LEGACY_CONFIG="$HOME/Applications/chiaki-portal/config"
+if [ ! -e "$XDG_CONFIG_HOME/Chiaki/Chiaki.conf" ] && [ ! -e "$APP_DIR/.legacy-imported" ]     && [ -f "$LEGACY_CONFIG/Chiaki/Chiaki.conf" ]; then
+    cp -a "$LEGACY_CONFIG/." "$XDG_CONFIG_HOME/" && touch "$APP_DIR/.legacy-imported"
+fi
 stamp="$(date +%Y%m%d-%H%M%S)"
 
 if [ "${DEKKIMON_BENCH:-0}" = 1 ]; then
@@ -46,7 +55,7 @@ LOG="$LOG_DIR/$stamp.log"
     [ -n "${CHIAKI_EXPERIMENT_FILE:-}" ] && sed 's/^/# experiment.conf: /' "$CHIAKI_EXPERIMENT_FILE"
 } >>"$LOG"
 
-"$APP_DIR/bin/chiaki" "$@" >>"$LOG" 2>&1 &
+"$APP_DIR/bin/dekkimon" "$@" >>"$LOG" 2>&1 &
 chiaki_pid=$!
 if [ "${DEKKIMON_BENCH:-0}" = 1 ]; then
     # Per-second Wi-Fi / thermal / clock / power samples next to the stream CSV.

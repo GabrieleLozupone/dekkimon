@@ -122,8 +122,13 @@ endif()
 if(NOT CHIAKI_ENABLE_FFMPEG_DECODER)
 	message(FATAL_ERROR "Chiaki GUI requires CHIAKI_ENABLE_FFMPEG_DECODER=ON")
 endif()
+# Dekkimon: the target keeps its upstream name (chiaki) so merges stay small; only the file is renamed.
+set_target_properties(chiaki PROPERTIES OUTPUT_NAME dekkimon)
+file(STRINGS "${PROJECT_SOURCE_DIR}/dekkimon.version" DEKKIMON_VERSION LIMIT_COUNT 1)
+target_compile_definitions(chiaki PRIVATE DEKKIMON_VERSION="${DEKKIMON_VERSION}")
+
 install(TARGETS chiaki
 		RUNTIME DESTINATION bin)
-install(FILES chiaking.desktop DESTINATION share/applications)
-install(FILES chiaking.png DESTINATION share/icons/hicolor/512x512/apps)
+install(FILES dekkimon.desktop DESTINATION share/applications)
+install(FILES res/dekkimon-icon.png DESTINATION share/icons/hicolor/512x512/apps RENAME dekkimon.png)
 

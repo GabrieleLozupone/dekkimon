@@ -1181,7 +1181,7 @@ void QmlBackend::createSession(const StreamSessionConnectInfo &connect_info)
             return;
 
         if (chiaki_quit_reason_is_error(reason)) {
-            QString m = tr("Chiaki Session has quit") + ":\n" + chiaki_quit_reason_string(reason);
+            QString m = tr("The session ended") + ":\n" + chiaki_quit_reason_string(reason);
             if (!reason_str.isEmpty())
                 m += "\n" + tr("Reason") + ": \"" + reason_str + "\"";
             emit sessionError(tr("Session has quit"), m);
@@ -2431,6 +2431,10 @@ QString QmlBackend::getExecutable() {
 #if defined(Q_OS_LINUX)
     //Check for flatpak
     const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    // Dekkimon: Steam must start the launcher script (isolated config, bundled libraries).
+    const QString launcher = env.value("DEKKIMON_LAUNCHER");
+    if (!launcher.isEmpty())
+        return launcher;
     QString flatpakId = env.value("FLATPAK_ID");
     QString appImagePath = env.value("APPIMAGE");
     if (!flatpakId.isEmpty()) {
@@ -2512,7 +2516,9 @@ void QmlBackend::createSteamShortcut(QString shortcutName, QString launchOptions
         shortcuts.append(newShortcut);
     }
     steam_tools->updateShortcuts(std::move(shortcuts));
-    steam_tools->updateControllerConfig(newShortcut.getAppName(), std::move(controller_layout_workshop_id));
+    // Dekkimon: chiaki-ng's workshop layout binds the back grips differently; the Dekkimon
+    // layout (L4 = PS, R4 = menu) is installed by the installer instead.
+    Q_UNUSED(controller_layout_workshop_id);
     if (!found)
     {
         if (cb.isCallable())

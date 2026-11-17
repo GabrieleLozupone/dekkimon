@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Dekkimon
+GenericName=Remote Play
+Comment=PlayStation Remote Play for the Steam Deck
+Exec=dekkimon
+Icon=dekkimon
+Categories=Game;Network;RemoteAccess;
