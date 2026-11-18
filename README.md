@@ -23,7 +23,7 @@ your PlayStation.
 
 On your Steam Deck, in **Desktop Mode**:
 
-1. Download [**Install Dekkimon.desktop**](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/Install%20Dekkimon.desktop).
+1. Download [**Install.Dekkimon.desktop**](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/Install.Dekkimon.desktop).
 2. Double-click it in your Downloads folder, and choose **Continue** if you're asked.
 3. Return to Gaming Mode. Dekkimon is in **Library › Non-Steam**, with its artwork and a
    ready-made controller layout.

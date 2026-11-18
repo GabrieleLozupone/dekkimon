@@ -22,8 +22,8 @@ Press the **STEAM** button, then go to **Power › Switch to Desktop**.
 
 **With a browser** (Firefox, or any browser from the Discover store):
 
-1. Download [**Install Dekkimon.desktop**](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/Install%20Dekkimon.desktop).
-2. Open your **Downloads** folder and double-click **Install Dekkimon.desktop**.
+1. Download [**Install.Dekkimon.desktop**](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/Install.Dekkimon.desktop).
+2. Open your **Downloads** folder and double-click **Install.Dekkimon.desktop**.
 3. If KDE warns that the file comes from the internet, choose **Continue** (or **Execute**).
 
 **Without a browser:** open **Konsole** (application menu › System › Konsole) and paste:
@@ -52,6 +52,32 @@ Double-click **Return to Gaming Mode** on the desktop. You'll find Dekkimon in
 <img src="../installer/steam/portrait.png" alt="Dekkimon library cover" width="20%"></p>
 
 Next: [connect to your console](first-connection.md).
+
+<p align="center"><img src="img/home.png" alt="Dekkimon's first screen in Gaming Mode" width="80%"></p>
+
+## Manual installation
+
+Download the [Steam Deck release archive](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/dekkimon-steamdeck.tar.gz),
+[installer script](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/dekkimon-install.sh),
+and [SHA256SUMS](https://github.com/GabrieleLozupone/dekkimon/releases/latest/download/SHA256SUMS) from the same release.
+Put all three files in **Downloads**.
+
+In Desktop Mode, open Konsole to verify the two downloads:
+
+```sh
+cd ~/Downloads
+sha256sum --check SHA256SUMS
+```
+
+Once both checks report **OK**, install from the local archive:
+
+```sh
+bash dekkimon-install.sh --tarball dekkimon-steamdeck.tar.gz
+```
+
+For an app-only install, add `--no-steam`. You can add the launcher yourself later by
+opening **Games › Add a Non-Steam Game to My Library** in Steam and browsing to
+`~/Applications/dekkimon/dekkimon.sh`.
 
 ## What the installer does
 

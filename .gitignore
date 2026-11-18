@@ -42,3 +42,4 @@ site/
 # Dekkimon
 .playwright-mcp/
 /dist/
+/website/node_modules/
