@@ -15,6 +15,8 @@
 Deck's screen and controls. *Dekkimon* means "Deck Gate" in Japanese: a gate from your Deck to
 your PlayStation.
 
+[Visit the Dekkimon website](https://gabrielelozupone.github.io/dekkimon/)
+
 <p align="center">
   <img src="docs/img/mockup-home.jpg" alt="Dekkimon home screen on a Steam Deck" width="88%">
 </p>
