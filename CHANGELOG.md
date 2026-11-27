@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0
+
+**Streaming**
+- Smooth buffer: when Wi-Fi holds the video back for a moment (100–150 ms is common) and then
+  delivers it all at once, Dekkimon now keeps a small reserve of frames and plays them at an
+  even pace instead of freezing and jumping. The first hold of a bad stretch is still visible;
+  the ones after it are hidden. The reserve is zero on a clean network, grows only after a real
+  network stall (not when a game drops below 60 fps), and goes back to zero about 15 seconds
+  after the network calms down. At most 150 ms; see
+  [Smooth streaming › Smooth buffer](https://github.com/GabrieleLozupone/dekkimon/blob/main/docs/network-optimization.md#9-smooth-buffer).
+
+**Interface**
+- Remote Play over the internet (through PSN) now uses the same connection screen as at home:
+  the globe, the console's name and the current step, instead of a plain spinner.
+
 ## 0.1.0
 
 First public release of Dekkimon, based on chiaki-ng 1.10.1.

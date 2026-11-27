@@ -179,6 +179,29 @@ Dekkimon chooses HDR or SDR automatically, depending on the screen (see
 - Run the console's **Adjust HDR** while streaming to the Deck, so it matches the Deck's screen
   rather than your TV.
 
+## 9. Smooth buffer
+
+Wi-Fi sometimes holds the video back for a moment and then delivers the late frames all at
+once. Shown as they arrive, that looks like a freeze followed by a jump. Dekkimon's smooth
+buffer handles this by itself:
+
+- On a clean network it adds no delay at all.
+- After a real network stall, it keeps a small reserve of frames (as much as that stall lasted,
+  at most 150 ms) and plays them at an even pace. The first stall is still visible; similar ones
+  after it are hidden.
+- When the network has been calm for about 15 seconds, the reserve shrinks back to zero, one
+  frame per second.
+- A game running below 60 fps, or a console that pauses its video on a still screen, does not
+  count as a stall.
+
+It works the same at home and over the internet. If you'd rather never have the extra delay,
+close Dekkimon and add this to `~/Applications/dekkimon/config/Chiaki/Chiaki.conf`, in the
+`[settings]` section (any value from 0 to 250 sets the most it may add, in milliseconds):
+
+```ini
+smooth_buffer_max_ms=0
+```
+
 ## Troubleshooting
 
 | What you see | Most likely cause | Fix |
@@ -188,6 +211,7 @@ Dekkimon chooses HDR or SDR automatically, depending on the screen (see
 | Half-second freezes after a glitch | "Request a key frame after errors" is on | Step 6 |
 | Picture frozen for a second or two, then back | The console paused its video, or a lost frame; Dekkimon recovers by itself | Steps 1, 3 if it happens often |
 | Short drop-outs when far from the router | Band steering, or a weak signal | Steps 2, 1 |
+| A hitch, then everything smooth but slightly delayed for a few seconds | The smooth buffer absorbing Wi-Fi stalls | Step 9; Steps 1, 3 to reduce stalls |
 | Judder in camera pans, otherwise smooth | 90 Hz screen with a 60 fps stream | Step 4 |
 | Soft, smeared image while moving fast | Motion blur in the game, or the bitrate is too low | Steps 7, 5 |
 | Image soft only after losses | The console lowered its bitrate after packet loss | Steps 1, 3 |
