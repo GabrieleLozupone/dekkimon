@@ -313,6 +313,7 @@ StreamSessionConnectInfo::StreamSessionConnectInfo(
 	this->enable_keyboard = false;
 	this->enable_dualsense = true;
 	this->enable_idr_on_fec_failure = settings->GetIDROnFECFailureEnabled();
+	this->smooth_buffer_max_ms = settings->GetSmoothBufferMaxMs();
 	this->rumble_haptics_intensity = settings->GetRumbleHapticsIntensity();
 	this->buttons_by_pos = settings->GetButtonsByPosition();
 	this->start_mic_unmuted = settings->GetStartMicUnmuted();
@@ -358,6 +359,7 @@ StreamSessionConnectInfo::StreamSessionConnectInfo(
 //   packet_loss_max=<percent>     highest loss reported to the console (setting default 5)
 //   idr_on_fec_failure=0|1        request a key frame after an unrecoverable frame
 //   reorder_timeout_us=<us>       wait for a missing video packet before skipping it (16000)
+//   smooth_buffer_max_ms=<ms>     cap of the adaptive smooth buffer, 0 = off (setting default 150)
 static void applyStreamExperiment(StreamSessionConnectInfo *info)
 {
 	const QString path = qEnvironmentVariable("CHIAKI_EXPERIMENT_FILE");
@@ -388,6 +390,8 @@ static void applyStreamExperiment(StreamSessionConnectInfo *info)
 			info->enable_idr_on_fec_failure = value != 0.0;
 		else if(key == QLatin1String("reorder_timeout_us") && value >= 1000.0 && value <= 200000.0)
 			info->av_reorder_timeout_us = static_cast<qint64>(value);
+		else if(key == QLatin1String("smooth_buffer_max_ms") && value >= 0.0 && value <= 250.0)
+			info->smooth_buffer_max_ms = static_cast<int>(value);
 		else
 			continue;
 		applied.append(QStringLiteral("%1=%2").arg(key).arg(value));
@@ -457,6 +461,7 @@ StreamSession::StreamSession(const StreamSessionConnectInfo &connect_info, QObje
 	memset(led_color, 0, sizeof(led_color));
 	packet_loss_max = connect_info.packet_loss_max;
 	experiment_desc = connect_info.experiment;
+	smooth_buffer_max_ms = connect_info.smooth_buffer_max_ms;
 	chiaki_takion_set_av_reorder_timeout_us(connect_info.av_reorder_timeout_us);
 	ChiakiErrorCode err;
 #if CHIAKI_LIB_ENABLE_PI_DECODER

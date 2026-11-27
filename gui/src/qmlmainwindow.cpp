@@ -387,6 +387,61 @@ private:
     quint64 generation = 0;
 };
 
+// Wakes at the playout slot of the next frame waiting in the smooth buffer.
+class SmoothReleaseThread final : public QThread
+{
+public:
+    explicit SmoothReleaseThread(QmlMainWindow *owner) : owner(owner) {}
+
+    void arm(qint64 target_us)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (stopping)
+            return;
+        if (!armed || target_us < wakeup_us)
+            wakeup_us = target_us;
+        armed = true;
+        condition.notify_one();
+    }
+
+    void stopThread()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        stopping = true;
+        condition.notify_one();
+    }
+
+protected:
+    void run() override
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        while (!stopping) {
+            if (!armed) {
+                condition.wait(lock);
+                continue;
+            }
+            const qint64 target = wakeup_us;
+            const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+            if (target > now_us) {
+                condition.wait_for(lock, std::chrono::microseconds(target - now_us));
+                continue; // re-check: stopped, re-armed earlier, or time reached
+            }
+            armed = false;
+            lock.unlock();
+            owner->releaseDueSmoothFrames();
+            lock.lock();
+        }
+    }
+
+private:
+    QmlMainWindow *owner;
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool stopping = false;
+    bool armed = false;
+    qint64 wakeup_us = 0;
+};
+
 class BufferedPlaybackPacerThread final : public QThread
 {
 public:
@@ -2591,6 +2646,12 @@ QmlMainWindow::~QmlMainWindow()
         delete present_pace_thread;
         present_pace_thread = nullptr;
     }
+    if (smooth_release_thread) {
+        smooth_release_thread->stopThread();
+        smooth_release_thread->wait();
+        delete smooth_release_thread;
+        smooth_release_thread = nullptr;
+    }
     if (deferred_swap_thread) {
         deferred_swap_thread->stopThread();
         deferred_swap_thread->wait();
@@ -2640,6 +2701,7 @@ QmlMainWindow::~QmlMainWindow()
         QMutexLocker locker(&pending_frame_mutex);
         clearPendingFrameStateLocked();
     }
+    smooth_buffer.clear();
     av_frame_free(&direct_pending_frame);
     {
         QMutexLocker locker(&reset_seed_mutex);
@@ -2774,6 +2836,11 @@ QmlMainWindow::PacingSnapshot QmlMainWindow::takePacingSnapshot()
     s.arrive_gap_max_ms = pace_arrive_gap_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
     s.handoff_max_ms = pace_handoff_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
     s.show_gap_max_ms = pace_show_gap_max_us.exchange(0, std::memory_order_relaxed) / 1000.0;
+    const SmoothBuffer::Stats smooth = smooth_buffer.takeStats();
+    s.smooth_delay_ms = smooth.delay_us / 1000.0;
+    s.smooth_peak_ms = smooth.delay_peak_us / 1000.0;
+    s.smooth_late = static_cast<int>(smooth.late);
+    s.smooth_skipped = static_cast<int>(smooth.dropped);
     return s;
 }
 
@@ -3047,6 +3114,33 @@ bool QmlMainWindow::configuredFrameMixerEnabledForScheduling() const
     return frame_mixer_config(settings) != nullptr;
 }
 
+void QmlMainWindow::releaseDueSmoothFrames(bool schedule)
+{
+    const qint64 now_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
+    int skipped = 0;
+    AVFrame *due = static_cast<AVFrame *>(smooth_buffer.takeDue(now_us, &skipped));
+    if (skipped > 0) {
+        dropped_frames_current.fetchAndAddRelaxed(skipped);
+        pace_replaced.fetch_add(skipped, std::memory_order_relaxed);
+    }
+    if (due) {
+        {
+            QMutexLocker locker(&direct_frame_mutex);
+            if (direct_pending_frame) {
+                av_frame_free(&direct_pending_frame);
+                dropped_frames_current.fetchAndAddRelaxed(1);
+                pace_replaced.fetch_add(1, std::memory_order_relaxed);
+            }
+            direct_pending_frame = due;
+        }
+        if (schedule)
+            scheduleUpdate(false, UpdateRequestReason::PendingFrame);
+    }
+    const qint64 next_us = smooth_buffer.nextDue();
+    if (next_us >= 0 && smooth_release_thread)
+        smooth_release_thread->arm(next_us);
+}
+
 void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, qint64 decoder_delivery_us)
 {
     const qint64 present_entry_us = static_cast<qint64>(chiaki_time_now_monotonic_us());
@@ -3078,18 +3172,25 @@ void QmlMainWindow::presentFrame(ChiakiFfmpegFrame frame, int32_t frames_lost, q
     }
 
     if (bypass_frame_queue) {
-        {
-            QMutexLocker locker(&direct_frame_mutex);
-            if (direct_pending_frame) {
-                av_frame_free(&direct_pending_frame);
-                dropped_frames_current.fetchAndAddRelaxed(1);
-                pace_replaced.fetch_add(1, std::memory_order_relaxed);
+        if (startup_warmup_frame_active || smooth_buffer.maxDelay() <= 0) {
+            {
+                QMutexLocker locker(&direct_frame_mutex);
+                if (direct_pending_frame) {
+                    av_frame_free(&direct_pending_frame);
+                    dropped_frames_current.fetchAndAddRelaxed(1);
+                    pace_replaced.fetch_add(1, std::memory_order_relaxed);
+                }
+                direct_pending_frame = frame.frame;
             }
-            direct_pending_frame = frame.frame;
+            if (!startup_warmup_frame_active)
+                startup_first_real_frame_queued_pending_visibility.storeRelease(1);
+            scheduleUpdate(false, UpdateRequestReason::PendingFrame);
+            return;
         }
-        if (!startup_warmup_frame_active)
-            startup_first_real_frame_queued_pending_visibility.storeRelease(1);
-        scheduleUpdate(false, UpdateRequestReason::PendingFrame);
+        smooth_buffer.push(frame.frame, frame.pts,
+            decoder_delivery_us > 0 ? decoder_delivery_us : present_entry_us);
+        startup_first_real_frame_queued_pending_visibility.storeRelease(1);
+        releaseDueSmoothFrames();
         return;
     }
 
@@ -5203,6 +5304,8 @@ renderer_backend_ready:
 
     present_pace_thread = new DeferredPresentPacerThread(this);
     present_pace_thread->start();
+    smooth_release_thread = new SmoothReleaseThread(this);
+    smooth_release_thread->start(QThread::HighPriority);
 
     vulkan_deferred_swap_enabled = settings->GetVulkanDeferredSwap();
     deferred_swap_thread = new DeferredSwapThread(this);
@@ -5233,6 +5336,8 @@ renderer_backend_ready:
         // queue reset below waits only for a render that is drawing queued frames.
         if (!s)
             drainRenderThread();
+        smooth_buffer.clear();
+        smooth_buffer.setMaxDelay(s ? static_cast<int64_t>(s->GetSmoothBufferMaxMs()) * 1000 : 0);
         if (!preserve_startup_warmup) {
             {
                 QMutexLocker locker(&direct_frame_mutex);
@@ -6846,6 +6951,8 @@ void QmlMainWindow::render()
     if (bypass_frame_queue) {
         AVFrame *incoming = nullptr;
         bool reset_direct_frame = false;
+        if (smooth_buffer.maxDelay() > 0)
+            releaseDueSmoothFrames(false);
         {
             QMutexLocker locker(&direct_frame_mutex);
             std::swap(incoming, direct_pending_frame);

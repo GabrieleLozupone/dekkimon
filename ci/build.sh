@@ -17,6 +17,7 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build "$BUILD" -j "$(nproc)"
 "$BUILD/test/chiaki-unit"
+"$BUILD/test/chiaki-smoothbuffer"
 
 PKG="$(mktemp -d)/dekkimon"
 mkdir -p "$PKG/bin" "$PKG/lib" "$PKG/share"

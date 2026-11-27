@@ -103,12 +103,15 @@ StreamBenchmark::StreamBenchmark(QmlMainWindow *window)
     //  arrived, shown, replaced           decoded frames, frames picked up by the renderer, overwritten
     //  arrive_bunched, show_late          decoder outputs < 4 ms apart, renderer pickups > 25 ms apart
     //  arrive_gap_max_ms, handoff_max_ms, show_gap_max_ms  largest gaps (see QmlMainWindow::PacingSnapshot)
+    //  smooth_delay_ms, smooth_peak_ms    adaptive smooth buffer delay at the end of the second / its peak
+    //  smooth_late, smooth_skipped        frames later than their slot / frames skipped by the buffer
     if (fresh)
         csv.write("wall_time,t_s,connected,bitrate_mbps,packet_loss_pct,frames_lost,frames_lost_delta,"
                   "dropped_frames,dropped_delta,queue_depth_avg,pending_frame_age_ms,color_pipeline,"
                   "target_bitrate,rtt,console_loss,quality_reports,loss_measured_pct,"
                   "frames,src_units,fec_units,fec_recovered,fec_failed,video_skipped,video_late,"
-                  "arrived,shown,replaced,arrive_bunched,show_late,arrive_gap_max_ms,handoff_max_ms,show_gap_max_ms\n");
+                  "arrived,shown,replaced,arrive_bunched,show_late,arrive_gap_max_ms,handoff_max_ms,show_gap_max_ms,"
+                  "smooth_delay_ms,smooth_peak_ms,smooth_late,smooth_skipped\n");
     csv.flush();
     qCInfo(chiakiGui) << "Benchmark: writing per-second stream stats to" << path;
 }
@@ -204,7 +207,7 @@ void StreamBenchmark::sample()
         .arg(delta(diag.fec_failed, last_diag.fec_failed))
         .arg(delta(diag.video_skipped, last_diag.video_skipped))
         .arg(delta(diag.video_late, last_diag.video_late));
-    row += QStringLiteral(",%1,%2,%3,%4,%5,%6,%7,%8\n")
+    row += QStringLiteral(",%1,%2,%3,%4,%5,%6,%7,%8")
         .arg(pace.arrived)
         .arg(pace.shown)
         .arg(pace.replaced)
@@ -213,6 +216,11 @@ void StreamBenchmark::sample()
         .arg(pace.arrive_gap_max_ms, 0, 'f', 1)
         .arg(pace.handoff_max_ms, 0, 'f', 1)
         .arg(pace.show_gap_max_ms, 0, 'f', 1);
+    row += QStringLiteral(",%1,%2,%3,%4\n")
+        .arg(pace.smooth_delay_ms, 0, 'f', 1)
+        .arg(pace.smooth_peak_ms, 0, 'f', 1)
+        .arg(pace.smooth_late)
+        .arg(pace.smooth_skipped);
     csv.write(row.toUtf8());
     csv.flush();
     last_frames_lost = frames_lost;

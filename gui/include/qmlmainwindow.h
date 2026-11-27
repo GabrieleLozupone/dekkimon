@@ -2,6 +2,7 @@
 
 #include "streamsession.h"
 #include "settings.h"
+#include "smoothbuffer.h"
 
 #include <QMutex>
 #include <QAtomicInteger>
@@ -52,6 +53,7 @@ class QFrame;
 class StatsOverlayWidget;
 class BufferedPlaybackPacerThread;
 class DeferredPresentPacerThread;
+class SmoothReleaseThread;
 class DeferredSwapThread;
 
 class QmlMainWindow : public QWindow
@@ -141,6 +143,10 @@ public:
     {
         int arrived = 0, shown = 0, replaced = 0, arrive_bunched = 0, show_late = 0;
         double arrive_gap_max_ms = 0.0, handoff_max_ms = 0.0, show_gap_max_ms = 0.0;
+        // adaptive smooth buffer (direct path): current/peak extra delay, frames that came after
+        // their slot (visible hitch), frames it skipped to catch up or to shrink the delay
+        double smooth_delay_ms = 0.0, smooth_peak_ms = 0.0;
+        int smooth_late = 0, smooth_skipped = 0;
     };
     PacingSnapshot takePacingSnapshot();
     // Whether the display path currently accepts HDR10 output: 1 = yes, 0 = no (e.g. SteamOS
@@ -207,6 +213,7 @@ signals:
 private:
     friend class BufferedPlaybackPacerThread;
     friend class DeferredPresentPacerThread;
+    friend class SmoothReleaseThread;
     friend class DeferredSwapThread;
 
     struct PendingFrameEntry;
@@ -313,6 +320,13 @@ private:
     bool bypass_frame_queue = true;
     QMutex direct_frame_mutex;
     AVFrame *direct_pending_frame = nullptr;
+    // Direct path: decoded frames wait here until their adaptive playout slot, then move to
+    // direct_pending_frame (see smoothbuffer.h). Off (max delay 0) = shown on arrival as before.
+    SmoothBuffer smooth_buffer{[](void *f) { AVFrame *frame = static_cast<AVFrame *>(f); av_frame_free(&frame); }};
+    SmoothReleaseThread *smooth_release_thread = nullptr;
+    // Moves the newest due frame to direct_pending_frame (renders it when schedule) and arms the
+    // release thread for the next one. Any thread.
+    void releaseDueSmoothFrames(bool schedule = true);
     struct pl_frame direct_frame = {};
     QAtomicInteger<int> direct_frame_reset = 0;
     uint64_t ts_start = 0;

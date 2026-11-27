@@ -106,6 +106,7 @@ class SdeckHapticsWorker;
 		// timeout for missing video packets (0 = library default) and a description of every
 		// override, written to the benchmark CSV at session start.
 		qint64 av_reorder_timeout_us = 0;
+		int smooth_buffer_max_ms = 150;
 		QString experiment;
 		bool start_mic_unmuted;
 		bool port_guessing_enabled;
@@ -188,6 +189,7 @@ class StreamSession : public QObject
 		int32_t frames_lost = 0;
 		int32_t pending_frames_lost = 0;
 		double packet_loss_max = 0;
+		int smooth_buffer_max_ms = 0;
 		QString experiment_desc;
 		QList<double> packet_loss_history;
 		QAtomicInteger<quint64> decoder_flush_generation{0};
@@ -383,6 +385,7 @@ class StreamSession : public QObject
 		QString GetExperiment() const { return experiment_desc; }
 		bool GetIdrOnFecFailure() const { return session.connect_info.enable_idr_on_fec_failure; }
 		double GetPacketLossMax() const { return packet_loss_max; }
+		int GetSmoothBufferMaxMs() const { return smooth_buffer_max_ms; }
 		quint64 DecoderFlushGeneration() const { return decoder_flush_generation.loadRelaxed(); }
 		// Called by the frame thread for every picture pulled from the decoder (any thread).
 		void NoteDecodedFrame() { video_decoded_count.fetchAndAddRelaxed(1); }

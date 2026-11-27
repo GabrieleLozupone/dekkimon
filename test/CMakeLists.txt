@@ -40,3 +40,9 @@ target_link_libraries(chiaki-unit chiaki-lib munit)
 if(CHIAKI_ENABLE_FFMPEG_DECODER)
 	target_link_libraries(chiaki-unit FFMPEG::avcodec FFMPEG::avutil)
 endif()
+
+# Adaptive playout buffer of the renderer (header-only, no Qt): simulated Wi-Fi stalls
+add_executable(chiaki-smoothbuffer smoothbuffer.cpp)
+target_include_directories(chiaki-smoothbuffer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../gui/include")
+target_compile_features(chiaki-smoothbuffer PRIVATE cxx_std_17)
+add_test(NAME smoothbuffer COMMAND chiaki-smoothbuffer)

@@ -299,6 +299,9 @@ class Settings : public QObject
 		bool GetFullscreenDoubleClickEnabled() const	   { return settings.value("settings/fullscreen_doubleclick", false).toBool(); }
 		void SetFullscreenDoubleClickEnabled(bool enabled) { settings.setValue("settings/fullscreen_doubleclick", enabled); }
 
+		// Longest extra delay the adaptive smooth buffer may add to hide network stalls (0 = off)
+		int GetSmoothBufferMaxMs() const { return qBound(0, settings.value("settings/smooth_buffer_max_ms", 150).toInt(), 250); }
+		void SetSmoothBufferMaxMs(int ms) { settings.setValue("settings/smooth_buffer_max_ms", qBound(0, ms, 250)); }
 		bool GetIDROnFECFailureEnabled() const	   { return settings.value("settings/idr_on_fec_failure", false).toBool(); }
 		void SetIDROnFECFailureEnabled(bool enabled) { settings.setValue("settings/idr_on_fec_failure", enabled); }
 

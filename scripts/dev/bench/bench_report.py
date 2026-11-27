@@ -209,6 +209,15 @@ def internals(rows, config=""):
     print(f"               max gaps p99/max: decode {pct([_i(r, 'arrive_gap_max_ms') for r in rows], .99):.0f}/{max(_i(r, 'arrive_gap_max_ms') for r in rows):.0f} ms"
           f"   gui handoff {pct([_i(r, 'handoff_max_ms') for r in rows], .99):.0f}/{max(_i(r, 'handoff_max_ms') for r in rows):.0f} ms"
           f"   render {pct([_i(r, 'show_gap_max_ms') for r in rows], .99):.0f}/{max(_i(r, 'show_gap_max_ms') for r in rows):.0f} ms")
+    if rows and "smooth_delay_ms" in rows[0]:
+        delays = [_i(r, "smooth_delay_ms") for r in rows]
+        buffered = sum(1 for d in delays if d > 0)
+        print(f"smooth buffer  delay avg {sum(delays) / len(delays):.0f} / p95 {pct(delays, .95):.0f} / max {max(_i(r, 'smooth_peak_ms') for r in rows):.0f} ms"
+              f"   seconds buffering {buffered} ({buffered / len(rows):.0%})"
+              f"   late frames {sum(_i(r, 'smooth_late') for r in rows):.0f}   skipped {sum(_i(r, 'smooth_skipped') for r in rows):.0f}")
+        render_gaps = [_i(r, "show_gap_max_ms") for r in rows]
+        print(f"               seconds with a visible hitch (render gap > 50 ms): {sum(1 for g in render_gaps if g > 50)}"
+              f"   vs network/decoder gaps > 50 ms: {sum(1 for r in rows if _i(r, 'arrive_gap_max_ms') > 50)}")
 
 
 def ab_rows(rows, sysrows):
