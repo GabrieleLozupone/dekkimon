@@ -3,9 +3,9 @@
 # Keeps its own config/data/cache next to the binary.
 #
 # Developer measurements are opt-in: launch with DEKKIMON_BENCH=1 (e.g. Steam launch options
-# "DEKKIMON_BENCH=1 %command%") to record per-second stream stats (bench/<time>.csv), the full
-# log (bench/<time>.log) and, if scripts/dev/bench/*.sh were copied to <app>/dev/, system
-# samples. See scripts/dev/bench/README.md.
+# "DEKKIMON_BENCH=1 %command%"), or create the file <app>/bench-on, to record per-second
+# stream stats (bench/<time>.csv), the full log (bench/<time>.log) and, if
+# scripts/dev/bench/*.sh were copied to <app>/dev/, system samples. See scripts/dev/bench/README.md.
 set -u
 APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 export XDG_CONFIG_HOME="$APP_DIR/config"
@@ -29,8 +29,10 @@ if [ ! -e "$XDG_CONFIG_HOME/Chiaki/Chiaki.conf" ] && [ ! -e "$APP_DIR/.legacy-im
     cp -a "$LEGACY_CONFIG/." "$XDG_CONFIG_HOME/" && touch "$APP_DIR/.legacy-imported"
 fi
 stamp="$(date +%Y%m%d-%H%M%S)"
+BENCH="${DEKKIMON_BENCH:-0}"
+[ -e "$APP_DIR/bench-on" ] && BENCH=1
 
-if [ "${DEKKIMON_BENCH:-0}" = 1 ]; then
+if [ "$BENCH" = 1 ]; then
     LOG_DIR="$APP_DIR/bench"
     mkdir -p "$LOG_DIR"
     export CHIAKI_BENCH_CSV="${CHIAKI_BENCH_CSV:-$LOG_DIR/$stamp.csv}"
@@ -57,7 +59,7 @@ LOG="$LOG_DIR/$stamp.log"
 
 "$APP_DIR/bin/dekkimon" "$@" >>"$LOG" 2>&1 &
 chiaki_pid=$!
-if [ "${DEKKIMON_BENCH:-0}" = 1 ]; then
+if [ "$BENCH" = 1 ]; then
     # Per-second Wi-Fi / thermal / clock / power samples next to the stream CSV.
     [ -x "$APP_DIR/dev/session_sampler.sh" ] && \
         "$APP_DIR/dev/session_sampler.sh" "$chiaki_pid" "$LOG_DIR/$stamp.sys.csv" >/dev/null 2>&1 &

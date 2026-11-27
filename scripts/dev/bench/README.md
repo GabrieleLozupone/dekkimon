@@ -12,6 +12,9 @@ Normal users don't need them. Nothing here runs unless you turn it on.
    DEKKIMON_BENCH=1 %command%
    ```
 
+   Or, without touching Steam: `ssh deck@<deck-ip> touch Applications/dekkimon/bench-on`
+   (delete the file to turn measurements off again).
+
 2. Optional, for Wi-Fi, temperature, clock and power samples, copy the samplers to the Deck:
 
    ```sh
