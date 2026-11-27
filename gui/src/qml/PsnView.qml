@@ -4,23 +4,26 @@ import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
 
+// Remote connection over PSN (and PSN auto-registration). Before the stream session exists the
+// console has to be linked through PSN, which can take several seconds. Shows the same Portal
+// connection screen as StreamView (PortalConnectOverlay, same geometry), so the hand-over to
+// StreamView once the session starts is a seamless cross-fade.
 Rectangle {
     id: view
     property bool allowClose: false
     property bool cancelling: false
     property bool textVisible: true
     property bool registOnly: false
+    property string statusText: qsTr("Connecting over the internet")
     property list<Item> restoreFocusItems
-    color: "black"
-
-    StackView.onActivated: infoLabel.visible = false
+    color: "#080812"
 
     function stop() {
         if (!allowClose)
             return;
         allowClose = false;
         cancelling = true;
-        infoLabel.text = qsTr("Cancelling connection with console over PSN ...");
+        statusText = qsTr("Cancelling…");
         Chiaki.psnCancel(false);
     }
 
@@ -52,56 +55,37 @@ Rectangle {
         onClicked: view.stop()
     }
 
-    Label {
-        id: infoLabel
-        anchors.centerIn: parent
-        opacity: textVisible ? 1.0: 0.0
-        visible: opacity
-        text: qsTr("Establishing connection with console over PSN ...")
-        Behavior on opacity { NumberAnimation { duration: 250 } }
+    PortalConnectOverlay {
+        id: overlay
+        objectName: "psnConnectOverlay"
+        anchors.fill: parent
+        consoleName: typeof root !== "undefined" && root.portalConsoleName && !view.registOnly ? root.portalConsoleName : ""
+        statusText: view.statusText
+        streamReady: false
+        running: view.visible && !errorBox.visible
+        titleOpacity: errorBox.visible ? 0 : 1
     }
 
-    Item {
-        anchors {
-            top: parent.verticalCenter
-            left: parent.left
-            right: parent.right
-            bottom: parent.bottom
-        }
-
-        BusyIndicator {
-            id: spinner
-            anchors.centerIn: parent
-            width: 70
-            height: width
-        }
-
-        Label {
-            id: closeMessageLabel
-            anchors {
-                top: spinner.bottom
-                horizontalCenter: spinner.horizontalCenter
-                topMargin: 30
-            }
-            opacity: (textVisible && !cancelling) ? 1.0: 0.0
-            visible: opacity
-            text: {
-                var typeString = registOnly ? qsTr("automatic registration") : qsTr("remote connection via PSN")
-                qsTr("Press %1 to cancel %2").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click").arg(typeString)
-            }
-        }
-
+    // Error after a failed session start, in place of the connection title.
+    Column {
+        id: errorBox
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: overlay.compact ? 36 : 48
+        anchors.topMargin: view.height * 0.17
+        width: view.width * 0.6
+        spacing: 10
+        visible: errorTitleLabel.text !== ""
         Label {
             id: errorTitleLabel
-            anchors {
-                bottom: spinner.top
-                horizontalCenter: spinner.horizontalCenter
-            }
-            font.pixelSize: 24
-            visible: text
+            width: parent.width
+            color: "#f5f4fb"
+            font.pixelSize: overlay.compact ? 26 : 36
+            font.weight: Font.Light
+            wrapMode: Text.Wrap
             onVisibleChanged: {
                 if (visible) {
-                    textVisible = false
+                    view.textVisible = false
                     view.allowClose = false
                     view.grabInput(errorTitleLabel)
                 }
@@ -109,14 +93,31 @@ Rectangle {
             Keys.onReturnPressed: root.showMainView()
             Keys.onEscapePressed: root.showMainView()
         }
-
         Label {
             id: errorTextLabel
-            anchors {
-                top: errorTitleLabel.bottom
-                horizontalCenter: errorTitleLabel.horizontalCenter
-                topMargin: 10
-            }
+            width: parent.width
+            color: "#a9a5ba"
+            font.pixelSize: overlay.compact ? 15 : 18
+            wrapMode: Text.Wrap
+        }
+    }
+
+    Label {
+        id: closeMessageLabel
+        anchors {
+            left: parent.left
+            bottom: parent.bottom
+            leftMargin: view.width < 800 ? 32 : 64
+            bottomMargin: 36
+        }
+        font.pixelSize: 15
+        color: "#a9a5ba"
+        opacity: (view.textVisible && view.allowClose && !view.cancelling) ? 1.0 : 0.0
+        visible: opacity
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        text: {
+            var typeString = view.registOnly ? qsTr("automatic registration") : qsTr("remote connection")
+            qsTr("Press %1 to cancel %2").arg(Chiaki.controllers.length ? (root.controllerButton("circle").includes("deck") ? "B" : "Circle") : "escape or right-click").arg(typeString)
         }
     }
 
@@ -124,10 +125,7 @@ Rectangle {
         id: closeTimer
         interval: 1500
         running: true
-        onTriggered: {
-            view.allowClose = true
-            infoLabel.visible = infoLabel.opacity
-        }
+        onTriggered: view.allowClose = true
     }
 
     Timer {
@@ -150,76 +148,75 @@ Rectangle {
             standardButton(Dialog.Ok).enabled = Qt.binding(function() {
                 return pinField.acceptableInput;
             });
-            textVisible = false
+            pinField.text = "";
+            view.textVisible = false
             view.grabInput(pinField);
         }
         onClosed: {
-            textVisible = true
+            view.textVisible = true
             view.releaseInput()
         }
         onAccepted: Chiaki.enterPin(pinField.text)
         onRejected: Chiaki.stopSession(false)
         Material.roundedScale: Material.MediumScale
 
-        TextField {
+        PortalPinPad {
             id: pinField
-            echoMode: Chiaki.settings.streamerMode ? TextInput.Password : TextInput.Normal
-            implicitWidth: 200
-            validator: RegularExpressionValidator { regularExpression: /[0-9]{4}/ }
-            Keys.onReturnPressed: {
-                if(sessionPinDialog.standardButton(Dialog.Ok).enabled)
-                    sessionPinDialog.standardButton(Dialog.Ok).clicked()
-            }
+            implicitWidth: Math.min(view.width - 80, 460)
+            implicitHeight: Math.min(view.height - 180, 360)
+            onAccepted: sessionPinDialog.accept()
+            onCancelled: sessionPinDialog.reject()
         }
     }
 
     Connections {
         target: Chiaki
 
-        function onConnectStateChanged() 
+        function onConnectStateChanged()
         {
             switch(Chiaki.connectState)
             {
                 case Chiaki.PsnConnectState.LinkingConsole:
-                    infoLabel.text = registOnly ? qsTr("Registering PlayStation console with Dekkimon ...") : qsTr("Linking Dekkimon with PlayStation console ...")
+                    view.statusText = view.registOnly ? qsTr("Registering the console with Dekkimon") : qsTr("Reaching the console through PSN")
                     view.allowClose = false
                     break
                 case Chiaki.PsnConnectState.RegisteringConsole:
                     view.registOnly = true;
                     break
                 case Chiaki.PsnConnectState.RegistrationFinished:
-                    infoLabel.text = qsTr("Successfully registered console")
+                    view.statusText = qsTr("Console registered")
                     failTimer.restart()
                     break
                 case Chiaki.PsnConnectState.DataConnectionStart:
-                    infoLabel.text = qsTr("Console Linked ... Establishing data connection with console over PSN ...")
+                    view.statusText = qsTr("Console found, opening the connection")
                     view.allowClose = true
                     break
                 case Chiaki.PsnConnectState.DataConnectionFinished:
+                    view.statusText = qsTr("Starting Remote Play")
                     view.allowClose = false
                     break
                 case Chiaki.PsnConnectState.ConnectFailed:
-                    if(!cancelling)
-                        infoLabel.text = qsTr("Connection over PSN failed closing ...")
+                    if(!view.cancelling)
+                        view.statusText = qsTr("Connection over PSN failed")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.ConnectFailedStart:
-                    if(!cancelling)
-                        infoLabel.text = qsTr("PSN couldn't establish connection with PlayStation. Please try again ...")
+                    if(!view.cancelling)
+                        view.statusText = qsTr("PSN couldn't reach the console. Please try again")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.ConnectFailedConsoleUnreachable:
-                    if(!cancelling)
-                        infoLabel.text = qsTr("Couldn't contact PlayStation over established connection, likely unsupported network type")
+                    if(!view.cancelling)
+                        view.statusText = qsTr("Couldn't contact the console over this network (likely an unsupported network type)")
                     failTimer.running = true
                     break
                 case Chiaki.PsnConnectState.WaitingForInternet:
-                    infoLabel.text = qsTr("Establishing Internet Connection to PSN...")
+                    view.statusText = qsTr("Waiting for an internet connection")
                     break
             }
         }
 
-        function onSessionChanged() 
+        function onSessionChanged()
         {
             if (!Chiaki.session) {
                 if (errorTitleLabel.text)
@@ -236,7 +233,7 @@ Rectangle {
             closeTimer.start();
         }
 
-        function onSessionPinDialogRequested() 
+        function onSessionPinDialogRequested()
         {
             if (sessionPinDialog.opened)
                 return;

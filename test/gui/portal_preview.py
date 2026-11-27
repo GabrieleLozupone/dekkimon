@@ -108,7 +108,8 @@ QtObject {
  }
  function stopSession(sleep) { console.log("preview: stopSession " + sleep); }
  property var window: ({ directStream: false, videoMode: 0, videoPreset: 2, ZoomFactor: 0,
-                         runtimeRendererBackend: 0, loadingTransitionComplete: false })
+                         runtimeRendererBackend: 0, loadingTransitionComplete: false,
+                         grabInput: function() {}, releaseInput: function() {} })
  property QtObject settings: QtObject {
   property int audioVolume: 100
   property int videoPreset: 2
@@ -145,6 +146,13 @@ QtObject {
  function psnPhoneLoginError() { return ""; }
  function initPsnAuth(url, cb) { cb("ok", true, true); }
  function connectToHost(index, name) {}
+ // remote connection over PSN (PsnView)
+ enum PsnConnectState { NotStarted, WaitingForInternet, InitiatingConnection, LinkingConsole, RegisteringConsole, RegistrationFinished, DataConnectionStart, DataConnectionFinished, ConnectFailed, ConnectFailedStart, ConnectFailedConsoleUnreachable }
+ property int connectState: 0
+ signal sessionError(string title, string text)
+ signal sessionPinDialogRequested()
+ function psnCancel(stop) { console.log("preview: psnCancel"); }
+ function enterPin(pin) {}
  function wakeUpHost(index) {}
  function deleteHost(index) {}
  function hideHost(mac, name) {}
@@ -182,6 +190,7 @@ ApplicationWindow {
  Material.theme: Material.Dark
  property bool initialAsk: true
  property string scene: ""
+ property string portalConsoleName: ""
  function controllerButton(name) { return "image://svg/button-deck#" + name; }
  function showSettingsDialog() {}
  function showManualHostDialog() {}
@@ -279,6 +288,7 @@ ApplicationWindow {
  Component { id: psnPhoneScene
   PSNPhoneSignIn { objectName: "psnPhone"; anchors.fill: parent }
  }
+ Component { id: psnScene; PsnView { objectName: "psnView"; anchors.fill: parent } }
  Component { id: pinScene
   ConsolePinDialog { objectName: "pinDialog"; anchors.fill: parent }
  }
@@ -308,6 +318,7 @@ ApplicationWindow {
   Chiaki.session = ["quick-stream", "leave", "picture-page", "conn-stream"].indexOf(name) >= 0 ? sampleSession : null;
   if (name === "pin") Chiaki.setConsolePin = (i, p) => {};
   if (legacyScenes[name]) { loader.sourceComponent = legacyScenes[name]; return; }
+  if (name === "psn") { portalConsoleName = "Living room PS5"; loader.sourceComponent = psnScene; return; }
   loader.sourceComponent = name === "psn-phone" ? psnPhoneScene : name === "pin" ? pinScene : name === "settings" ? settingsScene : name === "color-hdr" ? colorHdrScene : name === "picture" ? pictureScene
      : name === "globe" ? globeOnly : name === "sequence" ? sequenceScene
      : ["quick-stream", "leave", "picture-page", "conn-stream", "home-menu"].indexOf(name) >= 0 ? streamMenuScene : homeScene;
@@ -600,6 +611,19 @@ for scene in scenes:
         grab("psn-phone-waiting")
         dlg.setProperty("state_", "phone"); QTest.qWait(200); grab("psn-phone-connected")
         dlg.setProperty("state_", "done"); QTest.qWait(200); grab("psn-phone-done")
+    elif scene == "psn":
+        # remote connection over the internet: PSN link phases, then an error
+        show("psn"); QTest.qWait(1800)
+        chiaki = engine.singletonInstance("org.streetpea.chiaking", "Chiaki")
+        for state, name in ((1, "psn-waiting-internet"), (3, "psn-linking"), (6, "psn-data-connection"), (7, "psn-starting")):
+            chiaki.setProperty("connectState", state); QTest.qWait(700); grab(name)
+        chiaki.setProperty("connectState", 3); QTest.qWait(300)
+        QMetaObject.invokeMethod(chiaki, "sessionPinDialogRequested"); QTest.qWait(700); grab("psn-pin")
+        key(Qt.Key_Escape, 300); key(Qt.Key_Escape, 400)
+        show("psn"); QTest.qWait(400)
+        chiaki = engine.singletonInstance("org.streetpea.chiaking", "Chiaki")
+        QMetaObject.invokeMethod(chiaki, "sessionError", Q_ARG("QString", "Connection failed"), Q_ARG("QString", "The console did not answer over PSN. Check that it is in rest mode with Remote Play enabled."))
+        QTest.qWait(700); grab("psn-error")
     elif scene == "pin":
         show("pin"); QTest.qWait(500)
         for k in (Qt.Key_1, Qt.Key_2): key(k, 80)
