@@ -3,7 +3,11 @@
 # mirror, then every package synced (and downgraded where needed) to SteamOS's versions.
 #
 #   docker build -t dekkimon-build ci/steamos
-FROM archlinux:base-devel
+#
+# The base image is pinned: everything is downgraded to SteamOS's versions anyway, and newer
+# Arch images can't be. From 2026-11-22 Arch ships OpenSSL 3 as "openssl-3", whose files clash
+# with SteamOS's "openssl" package ("libcrypto.so.3 exists in filesystem").
+FROM archlinux:base-devel-20261108.0.623074
 
 ARG STEAMOS_MIRROR=https://steamdeck-packages.steamos.cloud/archlinux-mirror
 # Keyrings that sign the SteamOS repos, pinned by hash.
