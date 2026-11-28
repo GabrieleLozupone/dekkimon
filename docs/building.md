@@ -1,8 +1,8 @@
 # Building Dekkimon
 
 Dekkimon is built in a container that matches SteamOS 3.9. It uses the same packages, and
-the same Qt version, as the Steam Deck. So the binary runs on the Deck with only two extra
-libraries (libcpp-steam-tools and libminiupnpc), which the release package includes.
+the same Qt version, as the Steam Deck. So the binary runs on the Deck with only a few extra
+libraries (FFmpeg 8, libcpp-steam-tools and libminiupnpc), which the release package includes.
 
 ## Requirements
 

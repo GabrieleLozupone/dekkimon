@@ -4,7 +4,7 @@
 #   docker run --rm -v "$PWD:/src" -w /src dekkimon-build ci/build.sh
 #
 # Needs the git submodules (see .github/workflows/release.yml). Output: dist/dekkimon-steamdeck.tar.gz and
-# dist/SHA256SUMS. The tarball holds the binary, the two libraries SteamOS lacks, the launcher,
+# dist/SHA256SUMS. The tarball holds the binary, the libraries SteamOS lacks, the launcher,
 # the installer, Steam artwork and the Steam Input layout.
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,6 +26,12 @@ strip "$PKG/bin/dekkimon"
 # Libraries the Steam Deck doesn't ship. Everything else comes from SteamOS itself.
 cp -L "$(find "$BUILD" -name 'libcpp-steam-tools.so' | head -1)" "$PKG/lib/"
 cp -L /usr/lib/libminiupnpc.so.21 "$PKG/lib/"
+# FFmpeg 8 (linked from the SteamOS mirror) isn't on a stock Deck, nor are two of its
+# dependencies. List found by adding missing libraries on a real Deck until ldd was clean.
+for lib in libavcodec.so.62 libavformat.so.62 libavutil.so.60 libswresample.so.6 \
+           libbluray.so.3 libx265.so.216; do
+    cp -L "/usr/lib/$lib" "$PKG/lib/"
+done
 install -m755 "$SRC/scripts/deck/dekkimon.sh" "$PKG/dekkimon.sh"
 install -m755 "$SRC/installer/dekkimon-install.sh" "$PKG/dekkimon-install.sh"
 cp -r "$SRC/installer/steam" "$PKG/share/steam"

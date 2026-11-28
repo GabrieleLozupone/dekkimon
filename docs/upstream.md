@@ -63,4 +63,4 @@ Rules for new work:
 - New user-visible strings that say "chiaki-ng" should say "Dekkimon" (`git grep -n chiaki-ng
   -- gui/src`). Credits in About stay.
 - New dependencies: if the binary needs a library that SteamOS doesn't ship, CI fails at the
-  `ldd` check in `ci/build.sh`. Bundle it there, next to libcpp-steam-tools and libminiupnpc.
+  `ldd` check in `ci/build.sh`. Bundle it there, next to the other bundled libraries.
