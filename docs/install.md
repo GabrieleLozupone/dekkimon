@@ -83,7 +83,7 @@ opening **Games › Add a Non-Steam Game to My Library** in Steam and browsing t
 
 | What | Where |
 | --- | --- |
-| The app, its launcher, and two libraries SteamOS doesn't include | `~/Applications/dekkimon/` |
+| The app, its launcher, and the libraries SteamOS doesn't include | `~/Applications/dekkimon/` |
 | Your settings, consoles and PSN sign-in | `~/Applications/dekkimon/config/` |
 | Logs of recent launches | `~/Applications/dekkimon/logs/` |
 | A non-Steam game "Dekkimon", with artwork | Your Steam library |

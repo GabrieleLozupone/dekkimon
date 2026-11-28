@@ -13,8 +13,8 @@ https://github.com/GabrieleLozupone/dekkimon/tree/main/docs
 
 Contents:
     bin/dekkimon            the app
-    lib/                    the two libraries SteamOS doesn't include
-                            (libcpp-steam-tools, libminiupnpc)
+    lib/                    the libraries SteamOS doesn't include
+                            (FFmpeg, libcpp-steam-tools, libminiupnpc)
     dekkimon.sh             launcher (Steam starts this)
     dekkimon-install.sh     installer, updater and uninstaller
     share/                  icon, Steam artwork and Steam Input layout
